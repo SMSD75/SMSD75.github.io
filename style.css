@@ -49,6 +49,42 @@ section {
     box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
 }
 
+.publication {
+    display: flex;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+}
+
+.publication img {
+    max-width: 150px;
+    margin-right: 1rem;
+}
+
+.publication-details {
+    flex: 1;
+}
+
+.publication h3 {
+    margin: 0 0 0.5rem;
+}
+
+.publication p {
+    margin: 0.5rem 0;
+}
+
+.publication-links a {
+    margin-right: 1rem;
+    padding: 0.5rem;
+    background-color: #333;
+    color: white;
+    text-decoration: none;
+    border-radius: 3px;
+}
+
+.publication-links a:hover {
+    background-color: #555;
+}
+
 footer {
     text-align: center;
     padding: 1rem 0;
