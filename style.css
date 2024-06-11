@@ -17,17 +17,22 @@ header {
     width: 100%;
 }
 
+header nav {
+    max-width: 1000px;
+    margin: 0 auto;
+}
+
 nav ul {
     list-style: none;
     padding: 0;
     text-align: center;
     background-color: #444;
     margin: 0;
-    width: 100%;
+    display: flex;
+    justify-content: center;
 }
 
 nav ul li {
-    display: inline;
     margin: 0 1rem;
 }
 
