@@ -61,6 +61,26 @@ section {
     box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
 }
 
+.contact-icons {
+    display: flex;
+    justify-content: center;
+    gap: 20px; /* Adjust the gap as needed */
+}
+
+.contact-icon {
+    color: #333;
+    text-decoration: none;
+    font-size: 2rem; /* Adjust size as needed */
+}
+
+.contact-icon:hover {
+    color: #007BFF; /* Change to your preferred hover color */
+}
+
+.big-icon {
+    font-size: 2rem;
+}
+
 .publication {
     display: flex;
     align-items: flex-start;
@@ -105,22 +125,4 @@ footer {
     width: 100%;
     bottom: 0;
     position: relative;
-}
-
-/* Additional CSS for contact section */
-#Contact p {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 20px; /* Adjust the gap as needed */
-}
-
-#Contact a {
-    text-decoration: none;
-    color: #333;
-}
-
-.contact-links {
-    display: flex;
-    gap: 10px; /* Adjust the gap as needed */
 }
