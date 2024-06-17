@@ -133,7 +133,7 @@ footer {
 }
 
 .about-image {
-    border-radius: 100%;
+    border-radius: 0%;
     margin-right: 20px;
     width: 150px; /* Adjust the size as needed */
     height: 150px; /* Adjust the size as needed */
