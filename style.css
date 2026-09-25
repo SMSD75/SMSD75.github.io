@@ -190,10 +190,25 @@ footer {
 
 .about-content {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
+}
+
+.about-text p {
+    margin: 0 0 0.8rem;
+    line-height: 1.6;
+}
+
+.about-text p:last-child {
+    margin-bottom: 0;
+}
+
+.about-text a {
+    color: #007BFF;
+    text-decoration: none;
 }
 
 .about-image {
+    flex-shrink: 0;
     border-radius: 20%;
     margin-right: 20px;
     width: 150px; /* Adjust the size as needed */
@@ -361,6 +376,8 @@ footer {
 .highlight .o, .highlight .ow { color: #d73a49; }
 
 @media (max-width: 640px) {
+    .about-content { flex-direction: column; align-items: center; }
+    .about-image { margin: 0 0 1rem; }
     main { padding: 1rem; box-sizing: border-box; }
     .post-title { font-size: 1.6rem; }
     .post-content { font-size: 1rem; }
