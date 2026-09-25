@@ -61,6 +61,36 @@ section {
     box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
 }
 
+.news-list {
+    max-height: 260px;
+    overflow-y: auto;
+    margin: 0;
+    padding: 0 0.5rem 0 1.25rem;
+    line-height: 1.6;
+    scrollbar-width: thin;
+    scrollbar-color: #bbb transparent;
+    /* fade at the bottom hints there's more to scroll */
+    -webkit-mask-image: linear-gradient(to bottom, #000 85%, transparent);
+    mask-image: linear-gradient(to bottom, #000 85%, transparent);
+}
+
+.news-list li {
+    padding: 0.2rem 0;
+}
+
+.news-list li:last-child {
+    padding-bottom: 2.5rem;
+}
+
+.news-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.news-list::-webkit-scrollbar-thumb {
+    background: #bbb;
+    border-radius: 3px;
+}
+
 .contact-icons {
     display: flex;
     justify-content: center;
