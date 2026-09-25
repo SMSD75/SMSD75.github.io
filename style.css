@@ -114,12 +114,43 @@ section {
 .publication {
     display: flex;
     align-items: flex-start;
-    margin-bottom: 1rem;
+    gap: 1.25rem;
+    padding: 1rem 0;
+    border-bottom: 1px solid #eee;
 }
 
+.publication:last-of-type {
+    border-bottom: none;
+}
+
+/* uniform thumbnail frame: every figure gets the same box, letterboxed on white */
 .publication img {
-    max-width: 150px;
-    margin-right: 1rem;
+    flex: 0 0 240px;
+    width: 240px;
+    height: 150px;
+    object-fit: contain;
+    background: #fff;
+    border: 1px solid #e3e3e3;
+    border-radius: 8px;
+    padding: 6px;
+    box-sizing: border-box;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.publication img:hover {
+    transform: scale(1.04);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+
+@media (max-width: 640px) {
+    .publication {
+        flex-direction: column;
+    }
+    .publication img {
+        flex-basis: auto;
+        width: 100%;
+        height: 190px;
+    }
 }
 
 .publication-details {
