@@ -1,0 +1,930 @@
+---
+title: "MiniCPM-o 4.5, explained interactively"
+description: "Interactive walkthrough of MiniCPM-o 4.5: Omni-Flow chunked full-duplex streaming, listen/speak control tokens, TAIL speech timing, training and ablations, plus a critical read."
+tags: [paper-explainer, omni-modal, streaming]
+layout: null
+---
+{% raw %}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Interactive walkthrough of MiniCPM-o 4.5: Omni-Flow chunked full-duplex streaming, listen/speak control tokens, TAIL speech timing, training and ablations, plus a critical read.">
+<meta name="author" content="Mohammadreza Salehi">
+<link rel="alternate" type="application/atom+xml" title="Mohammadreza Salehi blog" href="/blog/feed.xml">
+<title>MiniCPM-o 4.5 Explained | Mohammadreza Salehi</title>
+<style>
+:root{
+  --bg:#f6f6f3;--panel:#ffffff;--ink:#1a1b20;--muted:#646976;--line:#d8d9de;--soft:#eeeef1;
+  --vis:#0d9488;--aud:#c77d02;--txt:#7646d6;--sp:#dc3b58;--ctl:#0a84c6;--sys:#58627a;
+  --vis-bg:#e1f5f2;--aud-bg:#fbefd8;--txt-bg:#eee6fc;--sp-bg:#fde6ea;--ctl-bg:#dff0fa;--sys-bg:#eaedf2;
+  --train:#15a34a;--warn:#e0730b;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#101116;--panel:#191a21;--ink:#e8e8ee;--muted:#9a9eac;--line:#2e313b;--soft:#22242c;
+    --vis:#2dd4bf;--aud:#fbbf24;--txt:#a78bfa;--sp:#fb7185;--ctl:#38bdf8;--sys:#94a3b8;
+    --vis-bg:#0f2d2a;--aud-bg:#33280d;--txt-bg:#251c3c;--sp-bg:#3a1620;--ctl-bg:#0c293a;--sys-bg:#242933;
+    --train:#4ade80;--warn:#fb923c;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#101116;--panel:#191a21;--ink:#e8e8ee;--muted:#9a9eac;--line:#2e313b;--soft:#22242c;
+  --vis:#2dd4bf;--aud:#fbbf24;--txt:#a78bfa;--sp:#fb7185;--ctl:#38bdf8;--sys:#94a3b8;
+  --vis-bg:#0f2d2a;--aud-bg:#33280d;--txt-bg:#251c3c;--sp-bg:#3a1620;--ctl-bg:#0c293a;--sys-bg:#242933;
+  --train:#4ade80;--warn:#fb923c;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.92em}
+a{color:var(--ctl)}
+.wrap{max-width:1180px;margin:0 auto;padding:20px 16px 80px}
+header{display:flex;gap:16px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}
+h1{font-size:26px;line-height:1.2;margin:4px 0 6px;letter-spacing:-.01em}
+h2{font-size:19px;margin:0 0 6px}
+h3{font-size:15px;margin:14px 0 6px}
+.sub{color:var(--muted);margin:0;max-width:760px}
+.btn{appearance:none;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:8px;padding:6px 11px;font:inherit;font-size:13.5px;cursor:pointer}
+.btn:hover{border-color:var(--muted)}
+.btn.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.btn.primary{background:var(--ctl);border-color:var(--ctl);color:#fff}
+nav.toc{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 18px}
+nav.toc a{text-decoration:none;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:13px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;margin:0 0 18px}
+.lede{color:var(--muted);margin:0 0 12px;max-width:900px}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 10px}
+.toolbar .lbl{font-size:12.5px;color:var(--muted);margin-left:6px}
+.tag{display:inline-block;font-size:11.5px;padding:1px 8px;border-radius:999px;font-weight:600}
+.t-vis{background:var(--vis-bg);color:var(--vis)}.t-aud{background:var(--aud-bg);color:var(--aud)}
+.t-txt{background:var(--txt-bg);color:var(--txt)}.t-sp{background:var(--sp-bg);color:var(--sp)}
+.t-ctl{background:var(--ctl-bg);color:var(--ctl)}.t-sys{background:var(--sys-bg);color:var(--sys)}
+.note{font-size:12.5px;color:var(--muted)}
+.mine{border-left:3px solid var(--warn);padding:2px 0 2px 10px;font-size:13.5px;margin:10px 0}
+.mine b{color:var(--warn)}
+
+/* architecture */
+.arch-wrap{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:14px;align-items:start}
+@media (max-width:920px){.arch-wrap{grid-template-columns:1fr}}
+#arch{width:100%;height:auto;display:block}
+.edge{fill:none;stroke-width:1.7;opacity:.6}
+.edge.dash{stroke-dasharray:5 4}
+.k-vis.edge{stroke:var(--vis)}.k-aud.edge{stroke:var(--aud)}.k-txt.edge{stroke:var(--txt)}
+.k-sp.edge{stroke:var(--sp)}.k-ctl.edge{stroke:var(--ctl)}.k-sys.edge{stroke:var(--sys)}
+.pulse{stroke:none}
+.pulse.k-vis{fill:var(--vis)}.pulse.k-aud{fill:var(--aud)}.pulse.k-txt{fill:var(--txt)}
+.pulse.k-sp{fill:var(--sp)}.pulse.k-ctl{fill:var(--ctl)}.pulse.k-sys{fill:var(--sys)}
+.node{cursor:pointer;transition:opacity .2s}
+.node .nbox{stroke-width:1.5;transition:stroke-width .15s}
+.node.k-vis .nbox{fill:var(--vis-bg);stroke:var(--vis)}.node.k-aud .nbox{fill:var(--aud-bg);stroke:var(--aud)}
+.node.k-txt .nbox{fill:var(--txt-bg);stroke:var(--txt)}.node.k-sp .nbox{fill:var(--sp-bg);stroke:var(--sp)}
+.node.k-ctl .nbox{fill:var(--ctl-bg);stroke:var(--ctl)}.node.k-sys .nbox{fill:var(--sys-bg);stroke:var(--sys)}
+.node:hover .nbox,.node.sel .nbox{stroke-width:3}
+.node.active .nbox{stroke-width:3.5;filter:drop-shadow(0 0 6px rgba(120,120,255,.45))}
+.node.sel .nbox{stroke-dasharray:none}
+.nt{fill:var(--ink);font-size:12.5px;font-weight:650}
+.ns{fill:var(--muted);font-size:10.8px}
+.badge{font-size:9.5px;font-weight:700;letter-spacing:.04em}
+.node.tr .nbox{stroke:var(--train)!important;stroke-width:3}
+.node.tr .badge{fill:var(--train)}
+.node.fz{opacity:.42}
+.node.fz .badge{fill:var(--muted)}
+.elab{fill:var(--muted);font-size:10.5px}
+#panel{border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--bg);min-height:300px}
+#panel h3{margin:4px 0 4px;font-size:16px}
+#panel p{margin:6px 0;font-size:14px}
+#panel dl{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;margin:8px 0;font-size:13px}
+#panel dt{color:var(--muted)}
+#panel dd{margin:0}
+#panel .why{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13.5px;margin-top:8px}
+.cap{margin-top:10px;font-size:14px;min-height:42px;padding:9px 12px;border-radius:10px;background:var(--soft)}
+
+/* omni-flow sim */
+.sim-top{display:grid;grid-template-columns:320px minmax(0,1fr);gap:14px}
+@media (max-width:820px){.sim-top{grid-template-columns:1fr}}
+#scene{width:100%;height:210px;border-radius:10px;border:1px solid var(--line);display:block}
+.phase{background:var(--soft);border-radius:10px;padding:10px 12px;font-size:14px}
+.phase .ph-t{font-weight:650}
+.mods{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+.mod{font-size:12px;border:1px solid var(--line);border-radius:999px;padding:2px 10px;color:var(--muted);transition:all .15s}
+.mod.on{color:#fff}
+.mod.on.m-vis{background:var(--vis);border-color:var(--vis)}.mod.on.m-aud{background:var(--aud);border-color:var(--aud)}
+.mod.on.m-llm{background:var(--txt);border-color:var(--txt)}.mod.on.m-sd{background:var(--sp);border-color:var(--sp)}
+.mod.on.m-fm{background:var(--sp);border-color:var(--sp)}
+.ctxbar{height:8px;background:var(--soft);border-radius:99px;overflow:hidden;margin-top:4px}
+.ctxbar>div{height:100%;background:var(--ctl);width:0}
+.tl-scroll{overflow-x:auto;margin-top:12px}
+.tl{display:grid;grid-template-columns:118px repeat(16,minmax(48px,1fr));gap:3px;min-width:940px;font-size:11.5px}
+.tl .rl{color:var(--muted);font-size:11.5px;display:flex;align-items:center;padding-right:6px;line-height:1.2}
+.tl .c{min-height:34px;border-radius:6px;background:var(--soft);padding:3px 4px;display:flex;flex-wrap:wrap;align-content:center;justify-content:center;gap:2px;text-align:center;line-height:1.15;transition:background .2s}
+.tl .c.cur{outline:2px solid var(--ink);outline-offset:-1px}
+.tl .hd{background:none;min-height:20px;color:var(--muted);font-weight:600}
+.tl .hd.cur{color:var(--ink);outline:none}
+.c.v{background:var(--vis-bg);color:var(--vis);font-weight:600}
+.c.v.hot{background:#f7d9c4;color:#b4410b}
+:root[data-theme="dark"] .c.v.hot{background:#3d2111;color:#fb923c}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .c.v.hot{background:#3d2111;color:#fb923c}}
+.c.a{background:var(--soft);color:var(--muted)}
+.c.a.user{background:var(--aud-bg);color:var(--aud);font-weight:600}
+.c.l{color:var(--muted)}
+.c.s{background:var(--ctl-bg);color:var(--ctl);font-weight:700}
+.c.o{background:var(--txt-bg);color:var(--txt)}
+.c.h{background:var(--sp-bg);color:var(--sp)}
+.w-on{font-weight:800;text-decoration:underline}
+.tape{display:flex;gap:3px;overflow:hidden;justify-content:flex-end;padding:8px;background:var(--soft);border-radius:10px;margin-top:10px;min-height:40px;align-items:center}
+.chip{flex:none;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;padding:3px 6px;border-radius:5px;white-space:nowrap}
+.ch-b{background:var(--ink);color:var(--bg)}
+.ch-v{background:var(--vis-bg);color:var(--vis);border:1px solid var(--vis)}
+.ch-a{background:var(--aud-bg);color:var(--aud);border:1px solid var(--aud)}
+.ch-c{background:var(--ctl-bg);color:var(--ctl);border:1px solid var(--ctl)}
+.ch-t{background:var(--txt-bg);color:var(--txt);border:1px solid var(--txt)}
+
+/* TAIL */
+#tailsvg{width:100%;height:auto;display:block}
+.tail-stats{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:8px}
+.tail-stats td,.tail-stats th{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left}
+.tail-stats th{color:var(--muted);font-weight:600;font-size:12.5px}
+.good{color:var(--train);font-weight:700}.bad{color:var(--sp);font-weight:700}
+
+/* training */
+.stages{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+@media (max-width:860px){.stages{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:520px){.stages{grid-template-columns:1fr}}
+.stage{border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--bg);font-size:13.5px}
+.stage h4{margin:0 0 4px;font-size:14.5px}
+.stage ul{margin:6px 0;padding-left:18px}
+.stage .btn{margin-top:4px;font-size:12.5px;padding:4px 9px}
+.lr-wrap{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;align-items:start;margin-top:8px}
+@media (max-width:820px){.lr-wrap{grid-template-columns:1fr}}
+#lr{width:100%;height:260px;display:block;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+.slider{display:block;margin:10px 0;font-size:13px}
+.slider input{width:100%}
+.formula{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;background:var(--soft);padding:10px;border-radius:8px;line-height:1.7;overflow-x:auto}
+
+/* ablation */
+.abl{width:100%;border-collapse:separate;border-spacing:0 4px;font-size:13px}
+.abl th{color:var(--muted);font-weight:600;text-align:left;padding:0 6px}
+.abl td{padding:3px 6px;vertical-align:middle}
+.abl tr.dim{opacity:.32}
+.bar{height:16px;border-radius:4px;background:var(--txt);position:relative;min-width:2px}
+.bar span{position:absolute;left:calc(100% + 4px);top:-1px;font-size:11.5px;color:var(--ink);white-space:nowrap}
+.barcell{width:15%;padding-right:40px!important}
+.gran{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:10px}
+@media (max-width:640px){.gran{grid-template-columns:1fr}}
+.gcard{border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--bg);font-size:13px}
+.gcard .row{display:flex;align-items:center;gap:6px;margin:4px 0}
+.gcard .row b{width:84px;font-weight:500;color:var(--muted);font-size:12px}
+.gcard .gb{height:10px;border-radius:3px}
+.nums{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-top:10px}
+.num{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--bg)}
+.num .big{font-size:22px;font-weight:750;letter-spacing:-.01em}
+.num .lab{font-size:12.5px;color:var(--muted)}
+.crit li{margin:8px 0}
+.crit b{font-weight:700}
+.ls-grid{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:16px;align-items:start;margin-top:6px}
+@media (max-width:860px){.ls-grid{grid-template-columns:1fr}}
+.ls-tape{justify-content:flex-start;flex-wrap:wrap}
+.dist{display:grid;grid-template-columns:110px 1fr 46px;gap:5px 8px;align-items:center;font-size:13px;margin-top:6px}
+.dist .dl{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;text-align:right}
+.dist .db{height:16px;border-radius:4px;background:var(--line)}
+.dist .db.pick{background:var(--ctl)}
+.dist .db.spk{background:var(--txt)}
+.dist .dv{font-size:12px;color:var(--muted)}
+.dist .pickl{font-weight:800;color:var(--ctl)}
+.lt-sum{margin-top:10px;font-size:13px;padding:8px 10px;border-radius:8px;border:1px dashed var(--txt);color:var(--txt)}
+.ch-new{animation:pop .35s ease-out}
+@keyframes pop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
+#lblsvg,#ledger{width:100%;height:auto;display:block}
+.ilv{display:flex;flex-wrap:wrap;gap:3px;align-items:center;padding:10px;background:var(--soft);border-radius:10px;margin-top:8px;min-height:44px}
+.sq{width:7px;height:14px;border-radius:2px;background:var(--sp);opacity:.85;flex:none}
+.sq.prev{opacity:.45}
+.ilv .lab{font-size:11.5px;color:var(--muted);margin:0 4px}
+.ilv .def{border-style:dashed}
+.sitebar{display:flex;gap:14px;align-items:center;font-size:13.5px;margin:0 0 14px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+.sitebar a{text-decoration:none}
+.sitebar .home{color:var(--ink);font-weight:650}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="sitebar"><a class="home" href="/">Mohammadreza Salehi</a><a href="/blog/">&larr; All posts</a><span class="note" style="margin-left:auto">October 5, 2026</span></div>
+<header>
+  <div>
+    <div class="note mono">arXiv 2604.27393 · OpenBMB · MiniCPM-o Team</div>
+    <h1>MiniCPM-o 4.5 — real-time full-duplex omni-modal interaction</h1>
+    <p class="sub">9B end-to-end model that sees, listens and speaks <i>at the same time</i>. Core idea: <b>Omni-Flow</b> — chop time into 1 s chunks and serialize every chunk as <span class="mono">[vision ; audio ; output]</span> into one causal sequence, so a plain LLM decides each second <i>whether</i> and <i>what</i> to say. <b>TAIL</b> keeps the spoken audio from lagging behind what the model currently sees.</p>
+  </div>
+  <button class="btn" id="themeBtn" title="Toggle theme">◐ Theme</button>
+</header>
+<nav class="toc">
+  <a href="#arch-sec">1 · Architecture</a><a href="#flow-sec">2 · Omni-Flow live</a><a href="#ls-sec">2b · Listen vs speak</a><a href="#tail-sec">3 · TAIL speech timing</a>
+  <a href="#train-sec">4 · Training &amp; RL</a><a href="#abl-sec">5 · Ablations &amp; numbers</a><a href="#crit-sec">6 · Critical read</a>
+</nav>
+
+<!-- 1 ARCHITECTURE -->
+<section class="card" id="arch-sec">
+  <h2>1 · Architecture — click any block</h2>
+  <p class="lede">Encoders → one causal LLM → a small speech-token decoder → a streaming vocoder. Everything except the flow-matching vocoder is connected at the hidden-state level and trained end-to-end (~9.34B params). Press <b>Run one chunk</b> to watch one 1-second Omni-Flow step travel through the network.</p>
+  <div class="toolbar">
+    <button class="btn primary" id="runChunk">▶ Run one chunk</button>
+    <span class="lbl">Colour by training stage:</span>
+    <button class="btn on" data-stage="-1">off</button>
+    <button class="btn" data-stage="0">S1 speech PT</button>
+    <button class="btn" data-stage="1">S2 joint PT</button>
+    <button class="btn" data-stage="2">S3 SFT</button>
+    <button class="btn" data-stage="3">S4 RL</button>
+  </div>
+  <div class="arch-wrap">
+    <svg id="arch" viewBox="0 0 1040 515" role="img" aria-label="MiniCPM-o 4.5 architecture diagram">
+      <defs id="archDefs"></defs>
+    </svg>
+    <aside id="panel"></aside>
+  </div>
+  <div class="cap" id="archCap">Click a block for its role, numbers and why it matters. Colours: <span class="tag t-vis">vision</span> <span class="tag t-aud">audio</span> <span class="tag t-txt">text / LLM</span> <span class="tag t-sp">speech out</span> <span class="tag t-ctl">streaming control</span> <span class="tag t-sys">prompt</span></div>
+</section>
+
+<!-- 2 OMNI-FLOW -->
+<section class="card" id="flow-sec">
+  <h2>2 · Omni-Flow, live</h2>
+  <p class="lede">A 16-second illustrative session (cooking assistant). Each column is one 1 s chunk <span class="mono">k</span>. Inside a chunk the model <b>first ingests</b> the new frame and audio, <b>then</b> emits <span class="mono">[listen]</span> or <span class="mono">[speak]</span> + text. Watch three behaviours a turn-based model can't do: responding without a VAD, <b>proactive</b> speech (chunk 9, nobody asked), and <b>barge-in</b> (chunk 11).</p>
+  <div class="toolbar">
+    <button class="btn" id="simPlay">⏸ Pause</button>
+    <button class="btn" id="simStep">Step phase ⏭</button>
+    <button class="btn" id="simReset">↺ Reset</button>
+    <span class="lbl">Speed:</span>
+    <button class="btn" data-speed="0.25">0.25×</button>
+    <button class="btn on" data-speed="0.5">0.5×</button>
+    <button class="btn" data-speed="1">1× (real time)</button>
+  </div>
+  <div class="sim-top">
+    <div>
+      <canvas id="scene" aria-label="Animated scene"></canvas>
+      <div class="note" style="margin-top:6px">Scenario is illustrative, written for this page — not a demo from the paper.</div>
+    </div>
+    <div>
+      <div class="phase"><div class="ph-t" id="phT"></div><div id="phD"></div></div>
+      <div class="mods">
+        <span class="mod m-vis" id="m-vis">SigLIP + Resampler</span>
+        <span class="mod m-aud" id="m-aud">Whisper + MLP</span>
+        <span class="mod m-llm" id="m-llm">Qwen3-8B</span>
+        <span class="mod m-sd" id="m-sd">Speech-token decoder</span>
+        <span class="mod m-fm" id="m-fm">Flow-matching → speaker</span>
+      </div>
+      <div class="note">Context used (40,960-token window): <b id="ctxN">0</b> tokens · <span id="ctxEta"></span></div>
+      <div class="ctxbar"><div id="ctxBar"></div></div>
+      <div class="tape" id="tape"></div>
+      <div class="note" style="margin-top:4px">↑ The single causal sequence the LLM actually sees (latest tokens on the right). <span class="mono">⟨b⟩</span> = explicit chunk boundary token.</div>
+    </div>
+  </div>
+  <div class="tl-scroll"><div class="tl" id="tl"></div></div>
+  <div class="mine"><b>Back-of-envelope (mine):</b> one chunk ≈ 1 boundary + 64 visual + 10 audio + 1 control + ~3 text ≈ 79 tokens. 40,960 ÷ 79 ≈ 520 chunks ≈ <b>8–9 min</b> of 1-fps streaming before the context window fills. The paper doesn't say how long sessions are handled (eviction, frame dropping, summarization).</div>
+</section>
+
+<!-- 2b LISTEN / SPEAK -->
+<section class="card" id="ls-sec">
+  <h2>2b · Listen or speak? How the decision is made</h2>
+  <p class="lede">There is <b>no VAD and no separate turn-taking network</b>. After reading a chunk's new tokens, the LLM just predicts its next token, and special tokens in its vocabulary carry the decision. The paper compares two ways to set that up (§3.3, Table 1). Pick a formulation and a situation, then step through decoding.</p>
+  <div class="toolbar">
+    <span class="lbl">Formulation:</span>
+    <button class="btn on" data-ls="LS">LS — control token first, then text</button>
+    <button class="btn" data-ls="LT">LT — [listen] competes with words</button>
+  </div>
+  <div class="toolbar">
+    <span class="lbl">What's in this chunk's audio:</span>
+    <button class="btn" data-sit="silent">quiet room</button>
+    <button class="btn on" data-sit="asked">user just finished a question</button>
+    <button class="btn" data-sit="mid">user still mid-sentence</button>
+  </div>
+  <div class="toolbar">
+    <button class="btn primary" id="lsStep">Next decoding step ▶</button>
+    <button class="btn" id="lsReset">↺ Restart chunk</button>
+  </div>
+  <div class="ls-grid">
+    <div>
+      <div class="note">Chunk k as the LLM sees it: inputs it has read, then tokens it has emitted</div>
+      <div class="tape ls-tape" id="lsTape"></div>
+      <div class="phase" id="lsExplain" style="margin-top:10px"></div>
+    </div>
+    <div>
+      <div class="note" id="lsDistTitle"></div>
+      <div class="dist" id="lsDist"></div>
+      <div id="lsSum"></div>
+      <div class="note" style="margin-top:8px">Probabilities are illustrative, not from the paper. LS shows only the two control tokens: the paper doesn't say whether other tokens are masked at that position or simply learned to be ~0.</div>
+    </div>
+  </div>
+  <div class="mine"><b>Why LS wins (Table 1, 1 s chunks):</b> IFEval 0.29 vs 0.24, SDQA 0.36 vs 0.35, MMLU 0.65 vs 0.56. In LT, the probability of "say something" is split over thousands of possible first words, while "stay silent" is one token, so silence can win the argmax even when speaking is more likely overall. LS makes whether-to-speak a clean binary decision and keeps what-to-say a normal LM step.</div>
+
+  <h3>Same output layer, one extra word</h3>
+  <p class="lede" style="margin-bottom:6px">Both ways use the <b>same output layer</b>: the one the model always uses to pick its next word. Nothing new is added to the network. The only change is <b>what the model writes</b>:</p>
+  <div class="formula">LT:&nbsp; … a×10 | <span style="color:var(--ctl)">[listen]</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;or&nbsp; … a×10 | <span style="color:var(--txt)">Add the onions</span><br>LS:&nbsp; … a×10 | <span style="color:var(--ctl)">[listen]</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;or&nbsp; … a×10 | <span style="color:var(--ctl)">[speak]</span> <span style="color:var(--txt)">Add the onions</span></div>
+  <p style="margin:12px 0 4px;font-weight:650">Why one extra word helps:</p>
+  <ul style="margin:4px 0 0;padding-left:20px;font-size:14.5px">
+    <li style="margin:6px 0"><b>There is a fixed moment to decide.</b> Right after reading the new second of video and sound, the model must write one of two words: <span class="mono">[listen]</span> or <span class="mono">[speak]</span>. In training, only these two words ever appear in this spot. So the model learns: "here I just answer yes or no".</li>
+    <li style="margin:6px 0"><b>Every "yes" looks the same.</b> In LT, "yes, I'll talk" is written as some first word: "Add", "Sure", "Hi", and so on. So "talk" is spread over many different words, while "stay quiet" is always the same one word. In LS, every "talk" is the same word: <span class="mono">[speak]</span>.</li>
+    <li style="margin:6px 0"><b>First decide, then pick the words.</b> After <span class="mono">[speak]</span>, the model only thinks about <i>what</i> to say. It never has to choose between "stay quiet" and one particular word.</li>
+  </ul>
+  <p class="note" style="margin-top:6px">The paper doesn't say whether all other words are blocked at the decision spot, or whether the model simply learns to give them ~0 chance.</p>
+
+  <h3>Where the training targets come from</h3>
+  <p class="lede" style="margin-bottom:6px">Every duplex training clip has time-stamped video, user audio, and the assistant's reference text + speech. Cutting it into 1 s chunks gives the targets directly: a chunk where an assistant word <b>starts</b> gets <span class="mono">[speak]</span> + those words; every other chunk gets <span class="mono">[listen]</span>. The same start-time rule is what TAIL uses (section 3).</p>
+  <svg id="lblsvg" viewBox="0 0 940 230" role="img" aria-label="How listen and speak targets are derived from timestamps"></svg>
+  <p class="note">The rule "no output → oᵏ = [listen]" and the start-time assignment are from §3.2 and §3.4; drawing them on one clip is my reconstruction.</p>
+</section>
+
+<!-- 3 TAIL -->
+<section class="card" id="tail-sec">
+  <h2>3 · TAIL — keeping speech on the clock</h2>
+  <p class="lede"><b>What TAIL controls: how many words the model writes in each 1-second chunk.</b> Every word it writes is then spoken out loud, and speaking takes time. Write too many → the speaker falls behind, and you hear old things. Write too few → the speaker runs out and goes quiet. TAIL aims for: <b>seconds of speech written so far ≈ seconds that have passed</b>. So a chunk gets three short words, or just one long one.</p>
+  <div class="mine" style="font-size:14.5px"><b>Is TAIL a neural network? How does it pick the words?</b>
+    <ul style="margin:6px 0 0;padding-left:20px">
+      <li style="margin:5px 0"><b>No separate network, and no rule that runs while talking.</b> TAIL is a way of <b>preparing the training data</b>. The words are picked by the normal LLM (Qwen3-8B).</li>
+      <li style="margin:5px 0"><b>Making the training data:</b> take real recordings where we know <i>when each word starts</i> being spoken. Cut time into 1-second boxes. Put each word in the box where it <b>starts</b>. Example: "Add" starts at 0.0 s, "the" at 0.3 s, "chopped" at 0.45 s, "onions" at 0.85 s → all four go in box 0. "and" starts at 1.35 s → box 1.</li>
+      <li style="margin:5px 0"><b>Training:</b> the model learns to copy this. For chunk 0 it writes "Add the chopped onions", then the "end of chunk" marker, and then it waits for the next second of input.</li>
+      <li style="margin:5px 0"><b>While talking:</b> nothing measures time. The model has simply seen many examples of how long words take to say, and how far ahead the speech already is. So it knows when to stop writing for this chunk.</li>
+      <li style="margin:5px 0"><b>In the demo below</b> I apply the box rule directly, as a stand-in for what the model has learned. One word = one token here; the real model may split a long word into pieces (e.g. "chop" + "ped").</li>
+    </ul>
+    <div class="note" style="margin-top:6px">The paper says chunks are separated by marker tokens. That the model ends its chunk by writing that marker is my reading; the paper doesn't spell out this step.</div>
+  </div>
+  <h3>Step by step: one sentence, chunk by chunk</h3>
+  <div class="toolbar">
+    <span class="lbl">Strategy:</span>
+    <button class="btn" data-led="fixed2">Fixed 2 / chunk</button>
+    <button class="btn" data-led="fixed4">Fixed 4 / chunk</button>
+    <button class="btn on" data-led="tail">TAIL</button>
+    <label class="lbl"><input type="checkbox" id="ledLook"> look-ahead</label>
+  </div>
+  <svg id="ledger" viewBox="0 0 940 270" role="img" aria-label="Per-chunk ledger of text emitted and audio played"></svg>
+  <div class="mine" style="font-size:14px"><b>How to read this chart (example: chunk 0).</b>
+    <ul style="margin:6px 0 0;padding-left:20px">
+      <li style="margin:4px 0"><b>Writing is fast, speaking is slow.</b> At the start of chunk 0 the model writes all 4 words ("Add the chopped onions") in a split second. Saying them takes 1.35 s.</li>
+      <li style="margin:4px 0"><b>So speech spills into the next second.</b> The voice starts at 0.15 s (a small delay I assume for writing + making sound). 0.15 + 1.35 = 1.50 s. That is why "onions" is <i>heard</i> in the chunk-1 column, even though it was <i>written</i> in chunk 0. This is normal: the box rule only cares where a word <b>starts</b> in the planned speech ("onions" starts at 0.85 s).</li>
+      <li style="margin:4px 0"><b>"+0.50 s" = how much is still left to say when the chunk ends.</b> At the 1.0 s mark, 0.5 s of already-written speech is still waiting (most of "onions"). It is how far the voice is behind the clock. If the user interrupts right then, at most 0.5 s of old speech is still coming.</li>
+      <li style="margin:4px 0"><b>What matters is that this number does not grow.</b> With TAIL it stays around 0.2–0.5 s. With "Fixed 4" it climbs every second (the voice keeps falling further behind). With "Fixed 2" it goes negative and the voice goes quiet ("runs dry").</li>
+    </ul>
+  </div>
+  <div class="cap" id="ledCap"></div>
+  <div class="note" style="margin-top:10px"><b>Speech-decoder input inside chunk <span id="ilvK"></span></b> (click a chunk column above). Each text token is followed by its S3 speech tokens (25 per second of audio): text and speech are <i>interleaved</i>.</div>
+  <div class="ilv" id="ilv"></div>
+  <div class="mine" style="font-size:14px"><b>Look-ahead, in simple words.</b>
+    <ul style="margin:6px 0 0;padding-left:20px">
+      <li style="margin:4px 0"><b>Why:</b> how you say a word can depend on the next word ("thuh car" vs "thee apple"). At the end of a chunk, the next word isn't written yet.</li>
+      <li style="margin:4px 0"><b>What happens:</b> the <i>text</i> of the last word(s) of chunk k is written in chunk k as normal. Only their <i>sound</i> is held back. The other words of chunk k are spoken right away.</li>
+      <li style="margin:4px 0"><b>Then:</b> chunk k+1 starts, the model writes the next word(s), and now the speech decoder makes the sound for the held word, knowing what follows. After that it continues with the new words. It is not one big blob spoken at the end.</li>
+      <li style="margin:4px 0"><b>Cost:</b> the held word waits only until the next chunk begins and its first new word is written. It does not wait for the whole next chunk's speech. If older speech is still playing (e.g. "+0.50 s left to say"), the wait is hidden and you hear no pause. If not, there is a short silence (the striped bits in the chart when look-ahead is on).</li>
+    </ul>
+    <div class="note" style="margin-top:6px">The paper says the speech of "the last few" text tokens is moved to chunk k+1. The exact order inside chunk k+1 is my reading. The demo holds back just one word.</div>
+  </div>
+
+  <h3>At inference time: what TAIL buys you (my example, not from the paper)</h3>
+  <div class="mine" style="font-size:14.5px"><b>Two moments. Don't mix them.</b>
+    <ul style="margin:6px 0 0;padding-left:20px">
+      <li style="margin:4px 0"><b>Training:</b> TAIL lives here. The data is cut into 1-second boxes. The model learns a habit: write about 1 second of speech per second.</li>
+      <li style="margin:4px 0"><b>Inference (using the trained model):</b> the demo below lives here. We watch the habit pay off.</li>
+    </ul>
+  </div>
+  <p class="lede"><b>The story.</b> The model is describing a street, live. At 6 s, a dog runs into the road. The model sees it and writes "oh — a dog…" right away. But you can only <b>hear</b> it after all older words are spoken. Think of words waiting in a line at the speaker.</p>
+  <ul style="margin:0 0 10px;padding-left:20px;font-size:14.5px">
+    <li style="margin:4px 0"><b>(a) Text lead:</b> writes far ahead, not chunk by chunk. Long line. You hear about the dog ~4.5 s late, while the voice still talks about traffic lights.</li>
+    <li style="margin:4px 0"><b>(b) Fixed ratio:</b> chunk by chunk, but the same number of words each time. The line slowly grows. ~1.6 s late.</li>
+    <li style="margin:4px 0"><b>(c) TAIL-trained model:</b> chunk by chunk, about 1 s of speech each time. The line stays short. Under 1 s late.</li>
+  </ul>
+  <p class="note"><b>How to read it:</b> each block is a word, placed where it is <b>heard</b>. The thin line goes back to when it was <b>written</b>. Slanted line = waiting in line. <span style="color:var(--sp)">Red-dashed</span> = old news (written before the dog, heard after). Press Pause and toggle look-ahead to play with it.</p>
+  <div class="toolbar">
+    <button class="btn" id="tailPlay">⏸ Pause</button>
+    <label class="lbl"><input type="checkbox" id="lookahead" checked> TAIL look-ahead (defer last word's speech to next chunk)</label>
+  </div>
+  <svg id="tailsvg" viewBox="0 0 940 300"></svg>
+  <table class="tail-stats">
+    <thead><tr><th>Strategy</th><th>How much text per chunk</th><th>Dog first heard</th><th>Stale words after event</th><th>Now heard</th></tr></thead>
+    <tbody id="tailBody"></tbody>
+  </table>
+  <div class="mine"><b>How TAIL is supervised:</b> from word-level timestamps in duplex training data, every text token whose <i>start time</i> falls in <span class="mono">[(k−1)t, kt)</span> — plus its speech tokens — is assigned to chunk k. So the number of text tokens per chunk isn't fixed; the model learns it from accumulated playback progress. Look-ahead exists because pronunciation needs the next word ("the apple" vs "the car").</div>
+  <div class="mine"><b>Catch:</b> TAIL costs quality. SeedTTS EN WER: fixed interleave 2.38 → TAIL 3.93 (+65% rel.); ZH CER 0.86 → 1.04. The headline TTS numbers in Table 5 (0.86 / 2.38) match the <i>fixed-text</i> mode, not the duplex mode.</div>
+  <p class="note">Hover a word block for its generation/playback times. Blue underline = speech deferred by look-ahead (toggle it off to see TAIL's pure alignment; look-ahead buys pronunciation context at the cost of a little lag). Simulation uses a toy word-duration model (0.2 s + 0.05 s/char), 1 s chunks, 3 words/chunk for fixed ratio, 4 s lead for text-lead. Shapes are illustrative, not measured.</p>
+</section>
+
+<!-- 4 TRAINING -->
+<section class="card" id="train-sec">
+  <h2>4 · Training pipeline &amp; the length reward</h2>
+  <p class="lede">Starts from the MiniCPM-V 4.5 pretraining checkpoint (vision + Qwen3-8B already aligned). Speech is bolted on gently first, then everything is unfrozen. Click <b>show on diagram</b> to colour section 1 by trainable/frozen.</p>
+  <div class="stages" id="stages"></div>
+
+  <h3>Smooth length reward (RL stage) — play with it</h3>
+  <div class="lr-wrap">
+    <canvas id="lr"></canvas>
+    <div>
+      <div class="formula">s<sub>i</sub> = (0.5 − (ℓ<sub>i</sub>−ℓ<sub>min</sub>)/(ℓ<sub>max</sub>−ℓ<sub>min</sub>)) · min(1, (ℓ<sub>max</sub>−ℓ<sub>min</sub>)/τ)<br>r<sub>len</sub> = s<sub>i</sub> if correct · min(0, s<sub>i</sub>) if wrong</div>
+      <label class="slider">Length spread in group ℓ<sub>max</sub>−ℓ<sub>min</sub>: <b id="spreadV"></b> tokens<input type="range" id="spread" min="20" max="4000" step="20" value="600"></label>
+      <label class="slider">τ (damping): <b id="tauV"></b> tokens<input type="range" id="tau" min="100" max="4000" step="50" value="1500"></label>
+      <div class="note">Scale factor min(1, spread/τ) = <b id="lrScale"></b>. Groups whose responses are all similar length get almost no length signal → avoids noisy pressure. Wrong answers can only be <i>penalized</i> for length, never rewarded for being short. Disabled for the first 480 steps.</div>
+    </div>
+  </div>
+  <div class="mine"><b>Result (Table 9):</b> Kimi-K1.5-style reward cuts thinking length 50.7% but drops avg 73.5 → 73.0; this smooth version cuts 35.3% and <i>raises</i> avg to 74.3. Less aggressive = less conflict with the accuracy reward.</div>
+</section>
+
+<!-- 5 ABLATIONS -->
+<section class="card" id="abl-sec">
+  <h2>5 · Omni-Flow design ablations (Table 1)</h2>
+  <p class="lede">Three knobs: chunk size, explicit vs implicit chunk boundaries, and control formulation — <b>LS</b> (predict <span class="mono">[listen]/[speak]</span> first, then text) vs <b>LT</b> (<span class="mono">[listen]</span> competes with ordinary text tokens in one softmax).</p>
+  <div class="toolbar">
+    <span class="lbl">Compare:</span>
+    <button class="btn on" data-cmp="all">all</button>
+    <button class="btn" data-cmp="chunk">chunk size</button>
+    <button class="btn" data-cmp="bound">boundary</button>
+    <button class="btn" data-cmp="ctrl">LS vs LT</button>
+  </div>
+  <div style="overflow-x:auto"><table class="abl" id="ablT"></table></div>
+  <div class="cap" id="ablCap"></div>
+  <h3>Why tiny chunks break (my read)</h3>
+  <div class="gran" id="gran"></div>
+
+  <h3>Numbers worth remembering</h3>
+  <div class="nums">
+    <div class="num"><div class="big">54.4</div><div class="lab">LiveSports-3K-CC win rate (vision-only duplex) vs StreamingVLM 45.6, LiveCC 41.5</div></div>
+    <div class="num"><div class="big">77.6</div><div class="lab">OpenCompass avg (instruct), 9B — Gemini 2.5 Flash 78.5, Qwen3-VL-8B 76.5</div></div>
+    <div class="num"><div class="big">80.2</div><div class="lab">Daily-Omni — Qwen3-Omni-30B-A3B 70.7, Gemini 2.5 Flash 79.3</div></div>
+    <div class="num"><div class="big">0.109</div><div class="lab">OmniDocBench EN edit dist ↓ — best by far (next 0.214)</div></div>
+    <div class="num"><div class="big">0.21 RTF</div><div class="lab">llama.cpp-omni INT4 on RTX 4090, 11 GB (PyTorch INT4: 1.26)</div></div>
+    <div class="num"><div class="big">82.1 vs 81.6</div><div class="lab">Text avg vs its own Qwen3-8B backbone — omni training didn't erode language</div></div>
+  </div>
+</section>
+
+<!-- 6 CRITICAL -->
+<section class="card" id="crit-sec">
+  <h2>6 · Critical read</h2>
+  <ul class="crit">
+    <li><b>The full-duplex claim is under-evaluated.</b> The only duplex benchmark is LiveSports-3K-CC — vision-only commentary, scored by win rate. No audio barge-in, turn-taking latency, or false-interrupt metrics. The headline capability is shown mostly via demos.</li>
+    <li><b>"Full-duplex" = time-division multiplexing at 1 s.</b> Decisions happen once per chunk, so reaction latency has a ~1 s floor plus perception→playback delay. Smaller chunks were tried and collapsed (Table 1).</li>
+    <li><b>Table 1 is noisy.</b> 0.2 s scores AlpacaEval 1.22 but 0.1 s scores 2.40 — non-monotonic. Treat the chunk-size conclusion as directional; training budget per config isn't stated.</li>
+    <li><b>LS > LT is the cleanest finding.</b> Decoupling <i>whether</i> to speak from <i>what</i> to say (separate control token before content) beats a shared vocabulary. Explicit boundaries also help. Both cheap to adopt.</li>
+    <li><b>Speech quality headline ≠ duplex mode.</b> Table 5 numbers equal the fixed-interleave row; TAIL (the duplex mode) is notably worse in EN WER.</li>
+    <li><b>Efficiency comes from two compressions, not new ideas:</b> 16× visual token compression (64 tok/slice vs typical 256) and keeping the 8B backbone in text space (3–4 decode steps/s instead of 25 speech tok/s). Thinker/talker-style split, but with hidden-state + text-embedding summation and time alignment.</li>
+    <li><b>From a video-representation angle:</b> the streaming visual path is per-frame image encoding (SigLIP + resampler) — no temporal modeling in the encoder; all temporal reasoning lives in the LLM over a growing KV cache. Obvious room for a streaming video encoder / temporal token compression, and for context management beyond ~9 minutes.</li>
+    <li><b>Proactivity is supervised, not emergent.</b> It comes from hand-built full-duplex scenarios (reminders, scene description) in SFT; the paper itself calls proactive behaviour "relatively simple".</li>
+  </ul>
+</section>
+</div>
+
+<script>
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const NS='http://www.w3.org/2000/svg';
+function el(tag,attrs={},parent){const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(parent)parent.appendChild(e);return e;}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+let C={};
+function readColors(){const cs=getComputedStyle(document.documentElement);['bg','panel','ink','muted','line','soft','vis','aud','txt','sp','ctl','sys','vis-bg','aud-bg','txt-bg','sp-bg','ctl-bg','sys-bg','train','warn'].forEach(k=>C[k]=cs.getPropertyValue('--'+k).trim());}
+readColors();
+
+/* theme */
+$('#themeBtn').onclick=()=>{const r=document.documentElement;const dark=getComputedStyle(r).getPropertyValue('--bg').trim()==='#101116';r.setAttribute('data-theme',dark?'light':'dark');readColors();drawLR();buildTail();buildLabels();buildLedger();};
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{readColors();drawLR();buildTail();buildLabels();buildLedger();});
+
+/* ================= 1. ARCHITECTURE ================= */
+const NODES={
+ cam:{x:20,y:40,w:128,h:50,t:'Camera',s:'env-visual stream',k:'vis'},
+ mic:{x:20,y:250,w:128,h:50,t:'Microphone',s:'env-audio stream',k:'aud'},
+ sys:{x:20,y:418,w:128,h:56,t:'System prompt',s:'text + reference voice',k:'sys'},
+ uhd:{x:180,y:18,w:162,h:42,t:'LLaVA-UHD slicing',s:'≤448² in duplex mode',k:'vis'},
+ vit:{x:180,y:72,w:162,h:44,t:'SigLIP ViT',s:'0.42B · 1024 tok/slice',k:'vis'},
+ resamp:{x:180,y:128,w:162,h:44,t:'Resampler',s:'64 queries · 16× compress',k:'vis'},
+ whisper:{x:180,y:232,w:162,h:44,t:'Whisper-M encoder',s:'0.31B · 50 frames/s',k:'aud'},
+ aproj:{x:180,y:288,w:162,h:44,t:'Audio MLP projector',s:'5× pool → 10 tok/s',k:'aud'},
+ omniflow:{x:385,y:52,w:200,h:80,t:'Omni-Flow serializer',s:'g_k = [vᵏ ; aᵏ ; oᵏ]',k:'ctl'},
+ llm:{x:385,y:170,w:200,h:150,t:'Qwen3-8B backbone',s:'36 layers · 4096-d · GQA 32/8',k:'txt'},
+ ctrl:{x:385,y:345,w:200,h:50,t:'Listen / Speak control',s:'[listen] | [speak] → text',k:'ctl'},
+ textout:{x:630,y:60,w:152,h:46,t:'Text tokens oᵏ',s:'≈3–4 tok/s',k:'txt'},
+ proj2:{x:630,y:160,w:152,h:46,t:'Hidden → dec. MLP',s:'4096 → 768 · 10.5M',k:'sp'},
+ sum:{x:695,y:220,w:22,h:22,t:'+',k:'sp'},
+ stdec:{x:630,y:256,w:152,h:58,t:'Speech-token decoder',s:'0.3B Llama · S3 @25/s',k:'sp'},
+ tail:{x:630,y:345,w:152,h:50,t:'TAIL interleaving',s:'time-aligned chunks',k:'sp'},
+ flow:{x:830,y:256,w:180,h:58,t:'Flow-matching decoder',s:'streaming · voice-conditioned',k:'sp'},
+ spk:{x:830,y:345,w:180,h:50,t:'Speaker',s:'waveform playback',k:'sp'},
+};
+function A(id,side,f=0.5){const n=NODES[id];if(side==='l')return[n.x,n.y+n.h*f];if(side==='r')return[n.x+n.w,n.y+n.h*f];if(side==='t')return[n.x+n.w*f,n.y];return[n.x+n.w*f,n.y+n.h];}
+const Hp=(p,q,mx)=>{mx=mx??(p[0]+q[0])/2;return`M${p[0]} ${p[1]} H${mx} V${q[1]} H${q[0]}`;};
+const Vp=(p,q)=>{const my=(p[1]+q[1])/2;return`M${p[0]} ${p[1]} V${my} H${q[0]} V${q[1]}`;};
+const EDGES=[
+ {id:'e_cam',k:'vis',d:()=>Hp(A('cam','r'),A('uhd','l'),164)},
+ {id:'e_uhd',k:'vis',d:()=>Vp(A('uhd','b'),A('vit','t'))},
+ {id:'e_vit',k:'vis',d:()=>Vp(A('vit','b'),A('resamp','t'))},
+ {id:'e_res',k:'vis',d:()=>Hp(A('resamp','r'),A('omniflow','l',.3),356)},
+ {id:'e_mic',k:'aud',d:()=>Hp(A('mic','r'),A('whisper','l'),164)},
+ {id:'e_wh',k:'aud',d:()=>Vp(A('whisper','b'),A('aproj','t'))},
+ {id:'e_ap',k:'aud',d:()=>Hp(A('aproj','r'),A('omniflow','l',.72),370)},
+ {id:'e_sys',k:'sys',d:()=>Hp(A('sys','r',.35),A('llm','l',.88),362)},
+ {id:'e_ref',k:'sys',dash:1,d:()=>{const p=A('sys','b'),q=A('flow','r',.5);return`M${p[0]} ${p[1]} V500 H1028 V${q[1]} H${q[0]}`;}},
+ {id:'e_seq',k:'ctl',d:()=>Vp(A('omniflow','b'),A('llm','t'))},
+ {id:'e_ctl',k:'ctl',d:()=>Vp(A('llm','b'),A('ctrl','t'))},
+ {id:'e_txt',k:'txt',d:()=>Hp(A('ctrl','r'),A('textout','l'),607)},
+ {id:'e_fb',k:'txt',dash:1,d:()=>{const p=A('textout','t'),q=A('omniflow','t',.82);return`M${p[0]} ${p[1]} V34 H${q[0]} V${q[1]}`;}},
+ {id:'e_hid',k:'sp',d:()=>Hp(A('llm','r',.1),A('proj2','l'),607)},
+ {id:'e_p2',k:'sp',d:()=>Vp(A('proj2','b',.5),A('sum','t'))},
+ {id:'e_temb',k:'txt',d:()=>{const p=A('textout','r'),q=A('sum','r');return`M${p[0]} ${p[1]} H806 V${q[1]} H${q[0]}`;}},
+ {id:'e_sum',k:'sp',d:()=>Vp(A('sum','b'),A('stdec','t',.5))},
+ {id:'e_tail',k:'sp',dash:1,d:()=>Vp(A('tail','t'),A('stdec','b'))},
+ {id:'e_st',k:'sp',d:()=>Hp(A('stdec','r'),A('flow','l'))},
+ {id:'e_fl',k:'sp',d:()=>Vp(A('flow','b'),A('spk','t'))},
+];
+const EDGE={};
+const svg=$('#arch'), defs=$('#archDefs');
+['vis','aud','txt','sp','ctl','sys'].forEach(k=>{const m=el('marker',{id:'ar-'+k,viewBox:'0 0 10 10',refX:9,refY:5,markerWidth:7,markerHeight:7,orient:'auto-start-reverse'},defs);el('path',{d:'M0 1 L10 5 L0 9 z',style:`fill:var(--${k})`},m);});
+const gE=el('g',{},svg),gL=el('g',{},svg),gN=el('g',{},svg),gP=el('g',{},svg);
+EDGES.forEach(e=>{e.el=el('path',{d:e.d(),class:`edge k-${e.k}${e.dash?' dash':''}`,'marker-end':`url(#ar-${e.k})`},gE);EDGE[e.id]=e;});
+[[186,192,'vᵏ: 64 tok/frame ↗'],[186,350,'aᵏ: 10 tok/s ↗'],[620,28,'oᵏ appended back (autoregressive)'],[812,140,'text emb.'],[600,150,'hidden h'],[860,496,'reference voice → timbre / cloning'],[160,392,'text prefix']].forEach(([x,y,t])=>{const tx=el('text',{x,y,class:'elab'},gL);tx.textContent=t;});
+for(const[id,n]of Object.entries(NODES)){
+  const g=el('g',{class:`node k-${n.k}`,'data-id':id,tabindex:0},gN);n.g=g;
+  if(id==='sum'){el('circle',{cx:n.x+11,cy:n.y+11,r:11,class:'nbox'},g);const t=el('text',{x:n.x+11,y:n.y+16,'text-anchor':'middle',class:'nt'},g);t.textContent='+';}
+  else{
+    el('rect',{x:n.x,y:n.y,width:n.w,height:n.h,rx:10,class:'nbox'},g);
+    const t=el('text',{x:n.x+11,y:n.y+19,class:'nt'},g);t.textContent=n.t;
+    const s=el('text',{x:n.x+11,y:n.y+35,class:'ns'},g);s.textContent=n.s;
+    n.badge=el('text',{x:n.x+n.w-7,y:n.y+n.h-6,'text-anchor':'end',class:'badge'},g);
+  }
+  g.addEventListener('click',()=>select(id));
+  g.addEventListener('keydown',ev=>{if(ev.key==='Enter')select(id);});
+}
+// decorations: LLM layer stack + extra lines, omniflow token strip
+(function(){const n=NODES.llm,g=n.g;
+  [['ctx 40,960 · RoPE θ=10⁶',56],['decodes text only →',74],['3–4 steps/s, not 25',90]].forEach(([t,dy])=>{const x=el('text',{x:n.x+11,y:n.y+dy,class:'ns'},g);x.textContent=t;});
+  for(let i=0;i<9;i++)el('rect',{x:n.x+140,y:n.y+50+i*10,width:46,height:6,rx:2,style:'fill:var(--txt);opacity:'+(0.25+i*0.07)},g);
+  const o=NODES.omniflow,go=o.g;const seq=['b','v','v','v','v','a','a','c','t','t','b','v','v','v'];let x=o.x+11;
+  seq.forEach(s=>{const col={b:'var(--ink)',v:'var(--vis)',a:'var(--aud)',c:'var(--ctl)',t:'var(--txt)'}[s];el('rect',{x,y:o.y+50,width:s==='b'?4:10,height:14,rx:2,style:`fill:${col};opacity:.85`},go);x+=s==='b'?7:12;});
+  const tt=el('text',{x:o.x+11,y:o.y+77,class:'ns'},go);tt.textContent='';
+})();
+
+const INFO={
+ cam:{tag:'vis',title:'Camera → env-visual stream',role:'Live visual observations of the environment. In Omni-Flow the user is not a privileged "turn"; vision and audio are both just world state streamed in every chunk.',facts:[['Duplex max res','448×448 (offline: up to 2240×2240)'],['Train-time FPS','1–5 FPS, 0.2–0.4 MP (SFT augmentation)']],why:'Lower resolution in duplex mode is the price of real time; offline mode keeps the MiniCPM-V high-res OCR strength.',ref:'§2, §3.1, §5.3'},
+ mic:{tag:'aud',title:'Microphone → env-audio stream',role:'The full acoustic scene, including user speech when present. User requests enter here — there is no separate "user message".',facts:[['External VAD','not needed — the model itself decides when to talk'],['Format','streamed in chunks']],why:'Because the model sees raw ongoing audio every second, it can handle barge-in and decide on its own when an utterance is finished.',ref:'§3.1–3.2'},
+ sys:{tag:'sys',title:'Multimodal system prompt',role:'Text instructions plus a reference audio clip. Text goes into the LLM prefix; the reference audio conditions the flow-matching decoder to produce that voice.',facts:[['Enables','voice cloning, style/emotion control'],['Expresso / ESD','29.8 / 82.1 (CosyVoice2: 17.9 / 53.4)']],why:'End-to-end hidden-state connections mean the prompt can carry audio, not just text.',ref:'§1, §2'},
+ uhd:{tag:'vis',title:'LLaVA-UHD image slicing',role:'Splits any-aspect-ratio high-resolution images into slices sized for the ViT, so detail isn\'t lost to resizing.',facts:[['Duplex mode','≤448² → effectively one slice per frame'],['Offline mode','up to 2240² → many slices']],why:'Explains MiniCPM\'s document/OCR strength (OmniDocBench EN 0.109 vs 0.214 next best).',ref:'§2 Visual Encoding'},
+ vit:{tag:'vis',title:'SigLIP ViT (417.8M)',role:'Encodes each slice into patch tokens.',facts:[['Layers / width','27 / 1152, 16 heads'],['Patch','14×14 → 448/14 = 32 → 32² = 1024 tokens'],['Activation','GELU-tanh']],why:'Per-frame image encoder — no temporal modelling here; time is handled entirely by the LLM over the sequence.',ref:'§2, App. A'},
+ resamp:{tag:'vis',title:'Resampler (88.9M)',role:'Perceiver-style cross-attention: 64 learned queries attend over the 1024 patch tokens and output 64 visual tokens (4096-d) for the LLM.',facts:[['Compression','1024 → 64 = 16× (common: 4×)'],['Heads','32']],why:'This is what makes streaming affordable: 64 visual tokens per frame ≈ 64 tok/s at 1 fps. A 4× resampler would mean 256 tok/s and a 4× faster-filling context.',ref:'§2, App. A'},
+ whisper:{tag:'aud',title:'Whisper-Medium encoder (307.2M)',role:'Encodes audio in a chunk-based streaming fashion (WeNet-style), producing 50 feature frames per second.',facts:[['Layers / width','24 / 1024, 16 heads'],['Input','80 mel bins'],['Init','pretrained, frozen in stage 1']],why:'Streaming chunked encoding lets audio be consumed every second instead of after the utterance ends.',ref:'§2, §5.1'},
+ aproj:{tag:'aud',title:'Audio MLP projector (21M)',role:'Two-layer MLP (ReLU) mapping Whisper features into LLM space with 5× temporal pooling.',facts:[['Dims','1024 → 4096 → 4096'],['Rate','50 → 10 tokens/s'],['Init','random, trained in stage 1']],why:'10 audio tokens/s keeps audio cheap relative to vision (64/frame) inside each chunk.',ref:'§2, App. A'},
+ omniflow:{tag:'ctl',title:'Omni-Flow serializer — the core idea',role:'Time is cut into chunks of length t (best: 1.0 s). For chunk k the new visual tokens vᵏ, audio tokens aᵏ and output tokens oᵏ form a group gₖ = [vᵏ ; aᵏ ; oᵏ]. Groups are concatenated into ONE sequence for a standard causal LM. Inside a chunk: perceive first, then emit — every output is conditioned on the freshest observation.',facts:[['Inspiration','time-division multiplexing'],['Boundaries','explicit special tokens between groups (beats implicit)'],['Silence','oᵏ = [listen]']],why:'Converts turn-taking into a stream of time-local updates, so "full duplex" and "proactive" fall out of plain next-token prediction — no extra architecture.',ref:'§3, Table 1'},
+ llm:{tag:'txt',title:'Qwen3-8B backbone (8.19B)',role:'Reads the interleaved omni sequence and generates only TEXT tokens plus hidden states that steer speech.',facts:[['Layers / width','36 / 4096, FFN 12,288'],['Attention','32 heads, 8 KV heads (GQA), head-dim 128'],['Context','40,960 · RoPE θ = 10⁶'],['Vocab','151,748']],why:'Decoding text (3–4 steps/s ≈ human speech rate) instead of speech tokens (~25/s) is both ~7× cheaper and avoids the language-capability decay seen when LLMs emit speech tokens directly. Text avg actually rises vs the backbone (82.1 vs 81.6).',ref:'§2 Text Decoding, Table 6'},
+ ctrl:{tag:'ctl',title:'Listen/Speak control (LS formulation)',role:'Not a separate network — special tokens in the LLM vocabulary. At each chunk the model first predicts a binary control token: [listen] ends the chunk; [speak] is followed by content tokens.',facts:[['LS vs LT @1 s','IFEval 0.29 vs 0.24 · MMLU 0.65 vs 0.56'],['LT','[listen] competes directly with text tokens in one softmax']],why:'Decoupling WHETHER to speak from WHAT to say makes duplex behaviour easier to learn — the cleanest ablation result in the paper.',ref:'§3.3, Table 1'},
+ textout:{tag:'txt',title:'Text output stream oᵏ',role:'The text tokens for this chunk. They are (1) appended back into the sequence as part of gₖ and (2) fed, as embeddings, to the speech-token decoder.',facts:[['Rate','≈3–4 tokens/s while speaking'],['Count per chunk','variable — set by TAIL']],why:'Text is the "thinking" channel; speech is rendered from it, so reasoning quality stays text-LLM quality.',ref:'§2, §3.4'},
+ proj2:{tag:'sp',title:'Backbone → decoder projector (10.5M)',role:'Two-layer MLP mapping LLM hidden states (4096) to the speech decoder width (768).',facts:[['Dims','4096 → 768 → 768'],['Init','random, trained in stage 1']],why:'Hidden states carry context: emotion, emphasis, instruction ("say it sadly"). This is how prosody is decided by the 8B model, not the 0.3B one.',ref:'§2, App. A'},
+ sum:{tag:'sp',title:'Summation: text embedding + projected hidden',role:'For each text token, the speech decoder input = its text embedding + MLP(LLM hidden state of that token).',facts:[['Effect','content (what) + prosody/context (how) in one vector']],why:'With prosody pre-encoded by the LLM, the small decoder can spend its capacity on acoustic modelling. Fully differentiable → end-to-end gradients from speech loss into the LLM.',ref:'§2 Speech Token Generation'},
+ stdec:{tag:'sp',title:'Speech-token decoder (~0.3B Llama)',role:'Autoregressively generates discrete S3 (CosyVoice) speech tokens, interleaved with the incoming text tokens.',facts:[['Transformer','20 layers, 768-d, 12 heads (188.8M) + 116.8M text embedding'],['Codebook','6,562 entries, 1 codebook'],['Rate','25 speech tokens/s'],['Context','4,096']],why:'The expensive 25 Hz loop runs in a 0.3B model, not the 8B one.',ref:'§2, App. A'},
+ tail:{tag:'sp',title:'TAIL — Time-Aligned Interleaving',role:'Chooses how many text tokens to put in chunk k so that, once voiced, cumulative playback lands near the boundary k·t. If earlier chunks ran long, it emits fewer tokens to let speech catch up. Bounded look-ahead defers the speech of the last few text tokens to chunk k+1.',facts:[['Supervision','tokens whose start time ∈ [(k−1)t, kt) go to chunk k'],['Cost','EN WER 3.93 vs 2.38 (fixed interleave)']],why:'Without it, the user hears content the model generated seconds ago — fatal for live commentary or barge-in. See section 3.',ref:'§3.4, Table 10'},
+ flow:{tag:'sp',title:'Streaming flow-matching decoder',role:'Converts S3 speech tokens into a waveform (CosyVoice2-style), conditioned on the reference audio from the system prompt.',facts:[['Trainable?','not part of the ~9B end-to-end learnable stack'],['Streaming','yes — chunked synthesis']],why:'Decouples voice identity (reference audio) from content tokens → zero-shot voice cloning.',ref:'§2 Waveform Synthesis'},
+ spk:{tag:'sp',title:'Speaker / playback',role:'Audio playback timeline — the thing TAIL keeps aligned with the model\'s current perception.',facts:[['Deploy','<12 GB RAM INT4 via llama.cpp-omni'],['RTF','0.21 on RTX 4090 (INT4)']],why:'While chunk k is being played, chunk k+1 is already being perceived — that overlap is what makes it duplex.',ref:'§7, Table 12'},
+};
+function select(id){
+  $$('.node.sel').forEach(n=>n.classList.remove('sel'));NODES[id].g.classList.add('sel');
+  const I=INFO[id];
+  $('#panel').innerHTML=`<span class="tag t-${I.tag}">${{vis:'vision',aud:'audio',txt:'text / LLM',sp:'speech out',ctl:'streaming control',sys:'prompt'}[I.tag]}</span>
+  <h3>${I.title}</h3><p>${I.role}</p><dl>${I.facts.map(f=>`<dt>${f[0]}</dt><dd>${f[1]}</dd>`).join('')}</dl>
+  <div class="why"><b>Why it matters:</b> ${I.why}</div><p class="note">Paper: ${I.ref}</p>`;
+}
+select('omniflow');
+
+const RUN=[
+ {e:['e_cam','e_mic'],n:['cam','mic'],cap:'<b>Chunk k opens.</b> A new camera frame and the last 1 s of microphone audio arrive.'},
+ {e:['e_uhd','e_wh'],n:['uhd','whisper'],cap:'Frame → LLaVA-UHD slicing (one 448² slice in duplex mode). Audio → streaming Whisper encoder (50 frames/s).'},
+ {e:['e_vit','e_ap'],n:['vit','aproj'],cap:'SigLIP turns the slice into 1024 patch tokens; the audio MLP pools 5× → 10 tokens for this second.'},
+ {e:['e_res'],n:['resamp'],cap:'Resampler: 64 learned queries cross-attend to the 1024 patches → vᵏ = 64 visual tokens.'},
+ {e:['e_seq'],n:['omniflow'],cap:'Omni-Flow appends ⟨boundary⟩ + vᵏ + aᵏ to the single causal sequence. Perception always precedes output within a chunk.'},
+ {e:['e_ctl'],n:['llm'],cap:'Qwen3-8B prefills the new tokens (KV cache grows) and first predicts a <b>control token</b>.'},
+ {e:['e_txt','e_hid'],n:['ctrl'],cap:'<b>[speak]</b> → decode ~3–4 text tokens for this chunk. (<b>[listen]</b> would end the chunk here.) Hidden states branch to the speech path.'},
+ {e:['e_fb','e_temb','e_p2'],n:['textout','proj2'],cap:'Text tokens are appended back as oᵏ. Each token\'s text embedding is summed with its projected LLM hidden state.'},
+ {e:['e_sum','e_tail'],n:['sum','tail'],cap:'TAIL fixes how many text tokens this chunk carries so their audio ends ≈ at the chunk boundary (last token\'s speech may be deferred).'},
+ {e:['e_st'],n:['stdec'],cap:'The 0.3B decoder emits S3 speech tokens (25/s) interleaved with the text tokens.'},
+ {e:['e_fl'],n:['flow'],cap:'Streaming flow-matching turns S3 tokens into a waveform in the reference voice.'},
+ {e:[],n:['spk'],cap:'Audio plays <b>while chunk k+1 is already being perceived</b> — that overlap is the "full duplex".'},
+];
+let runTok=0;
+function pulse(e){return new Promise(res=>{const p=e.el,L=p.getTotalLength(),c=el('circle',{r:5.5,class:'pulse k-'+e.k},gP),t0=performance.now(),D=Math.max(500,L*2.4);(function f(now){const u=Math.min(1,(now-t0)/D),pt=p.getPointAtLength(u*L);c.setAttribute('cx',pt.x);c.setAttribute('cy',pt.y);if(u<1)requestAnimationFrame(f);else{c.remove();res();}})(t0);});}
+async function runChunk(){const tok=++runTok;
+  for(const st of RUN){if(tok!==runTok)return;$$('.node.active').forEach(n=>n.classList.remove('active'));st.n.forEach(id=>NODES[id].g.classList.add('active'));$('#archCap').innerHTML=st.cap;
+    if(st.e.length)await Promise.all(st.e.map(id=>pulse(EDGE[id])));else await sleep(1400);}
+  if(tok===runTok)$$('.node.active').forEach(n=>n.classList.remove('active'));}
+$('#runChunk').onclick=runChunk;
+
+const ALLTR=['vit','resamp','whisper','aproj','llm','proj2','sum','stdec'];
+const STAGES=[
+ {name:'S1 · Speech pretraining',train:['aproj','proj2','sum','stdec'],frozen:['vit','resamp','whisper','llm'],obj:'Align Whisper features to LLM space; teach the speech decoder to turn LLM hidden states into semantically + prosodically grounded S3 tokens.',data:'ASR, zero-shot TTS, multi-speaker dialogue from millions of hours of speech',note:'Init: Whisper + MiniCPM-V 4.5 checkpoint; new modules random.'},
+ {name:'S2 · Joint pretraining',train:ALLTR,frozen:[],obj:'Unified next-token prediction over balanced VL + speech + omni data, incl. time-aligned full-duplex and proactive samples.',data:'Fixed modality mix per step: different modality combos on different data-parallel ranks',note:'Everything unfrozen.'},
+ {name:'S3 · Joint SFT',train:ALLTR,frozen:[],obj:'Broad instruction tuning, then high-quality human-annotated tuning for behaviour.',data:'Omni data augmented: 0.2–0.4 MP frames, 1–5 FPS → inference-time quality/latency knob',note:'Paper doesn\'t list frozen parts; shown as full.'},
+ {name:'S4 · RL',train:['llm'],frozen:[],obj:'GRPO (accuracy via rules + CompassVerifier judge, format, general RM vs code-mixing, smooth length reward), then RLAIF-V for hallucination.',data:'Image-text RLAIF-V transfers to streaming duplex hallucination',note:'Which params RL updates isn\'t stated; LLM highlighted.'},
+];
+function setStage(i){$$('[data-stage]').forEach(b=>b.classList.toggle('on',+b.dataset.stage===i));
+  for(const[id,n]of Object.entries(NODES)){n.g.classList.remove('tr','fz');if(n.badge)n.badge.textContent='';
+    if(i<0)continue;const S=STAGES[i];
+    if(S.train.includes(id)){n.g.classList.add('tr');if(n.badge)n.badge.textContent='TRAIN';}
+    else if(S.frozen.includes(id)){n.g.classList.add('fz');if(n.badge)n.badge.textContent='FROZEN';}
+    else if(id==='flow'&&n.badge)n.badge.textContent='FIXED';}
+  if(i>=0)$('#archCap').innerHTML=`<b>${STAGES[i].name}:</b> ${STAGES[i].obj} <span class="note">${STAGES[i].note}</span>`;}
+$$('[data-stage]').forEach(b=>b.onclick=()=>setStage(+b.dataset.stage));
+
+/* ================= 2. OMNI-FLOW SIM ================= */
+const SCRIPT=[
+ {sc:'calm',u:'',c:'L',t:[],n:'Nothing addressed to the model → it emits [listen] and the chunk ends.'},
+ {sc:'calm',u:'',c:'L',t:[],n:'Still quiet. Each [listen] still costs ~76 context tokens (frame + audio).'},
+ {sc:'calm',u:'Hey, what goes',c:'L',t:[],n:'User starts talking. No external VAD — the model itself sees the speech in aᵏ and keeps listening.'},
+ {sc:'calm',u:'in next?',c:'L',t:[],n:'Question may not be finished yet → still [listen].'},
+ {sc:'calm',u:'',c:'S',t:['Add','the','onions'],n:'Silence after a question in aᵏ → [speak]. Reply grounded in the frame (pot on stove).'},
+ {sc:'calm',u:'',c:'S',t:['and','stir','for'],n:'Continues; TAIL sizes each chunk\'s text to ≈1 s of audio.'},
+ {sc:'calm',u:'',c:'S',t:['two','minutes.'],n:'Fewer tokens this chunk — longer words fill the second.'},
+ {sc:'calm',u:'',c:'L',t:[],n:'Done speaking → back to [listen]. Note the previous chunk\'s audio is still playing.'},
+ {sc:'boil',u:'',c:'L',t:[],n:'The pot starts boiling over. The change is in vᵏ; one frame is ambiguous, so the model keeps listening.'},
+ {sc:'boil',u:'',c:'S',t:['Heads','up —','your'],n:'<b>Proactive:</b> no request in the audio at all — the visual stream alone triggers [speak].'},
+ {sc:'boil',u:'',c:'S',t:['pot','is','boiling'],n:'Continuing the warning.'},
+ {sc:'boil',u:'Oh— make it',c:'L',t:[],n:'<b>Barge-in:</b> new user speech arrives mid-sentence → the model yields with [listen]. Only ~1 chunk of already-generated audio is still in flight (thanks to TAIL).'},
+ {sc:'calm2',u:'spicy too?',c:'L',t:[],n:'User finishes the new request.'},
+ {sc:'calm2',u:'',c:'S',t:['Sure —','add','chili'],n:'Responds to the interruption instead of finishing the stale sentence.'},
+ {sc:'calm2',u:'',c:'S',t:['with','the','onions.'],n:'Answer completes.'},
+ {sc:'calm2',u:'',c:'L',t:[],n:'Back to listening. Loop restarts.'},
+];
+const PH=[0,.2,.42,.5,.85,1];
+const PHNAME=['① Perceive vision: frame → SigLIP → Resampler → 64 tokens','② Perceive audio: last 1 s → Whisper → MLP → 10 tokens','③ Decide: LLM predicts the control token','④ Generate text tokens oᵏ','⑤ Text + hidden → speech-token decoder → S3 tokens queued'];
+const sim={k:0,p:0,run:true,speed:.5,last:performance.now(),key:''};
+function phaseOf(p){for(let i=PH.length-2;i>=0;i--)if(p>=PH[i])return i;return 0;}
+function nText(k,p){const t=SCRIPT[k].t;const ph=phaseOf(p);if(SCRIPT[k].c==='L')return 0;if(ph<3)return 0;if(ph>=4)return t.length;return Math.min(t.length,Math.floor((p-.5)/.35*t.length)+1);}
+function heard(k,p){if(k===0)return null;const pr=SCRIPT[k-1];if(!pr.t.length)return null;return{w:pr.t,i:Math.min(pr.t.length-1,Math.floor(p*pr.t.length))};}
+function chunkTokens(k,p,full){const s=SCRIPT[k];const ph=full?5:phaseOf(p);const out=[];out.push(['b','⟨b⟩']);
+  if(full||ph>=0)out.push(['v','v'+sup(k)+'×64']);if(full||ph>=1)out.push(['a','a'+sup(k)+'×10']);
+  if(full||ph>=2)out.push(['c',s.c==='L'?'[listen]':'[speak]']);const n=full?s.t.length:nText(k,p);for(let i=0;i<n;i++)out.push(['t',s.t[i]]);return out;}
+function sup(k){return String(k).split('').map(d=>'⁰¹²³⁴⁵⁶⁷⁸⁹'[d]).join('');}
+function tokCount(k,p){let n=0;for(let j=0;j<k;j++)n+=1+64+10+1+SCRIPT[j].t.length;const s=SCRIPT[k],ph=phaseOf(p);n+=1+(ph>=0?64:0)+(ph>=1?10:0)+(ph>=2?1:0)+nText(k,p);return n;}
+function wave(user,seed){let d='M0 10';for(let i=1;i<=20;i++){const a=user?(Math.sin(i*1.7+seed)*0.5+Math.sin(i*.6+seed*3)*0.5)*8:Math.sin(i*2+seed)*1.2;d+=` L${i*2} ${10+a}`;}return`<svg width="40" height="20" viewBox="0 0 40 20"><path d="${d}" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>`;}
+function simRender(){
+  const {k,p}=sim,ph=phaseOf(p),nt=nText(k,p),h=heard(k,p);
+  const key=[k,ph,nt,h?h.i:-1].join(':');if(key===sim.key)return;sim.key=key;
+  const s=SCRIPT[k];
+  $('#phT').innerHTML=`Chunk ${k} · t ∈ [${k}, ${k+1}) s — ${PHNAME[ph]}`;
+  $('#phD').innerHTML=s.n;
+  const mods={vis:ph===0,aud:ph===1,llm:ph>=2&&ph<=3,sd:ph===4&&s.t.length>0,fm:!!h};
+  for(const m in mods)$('#m-'+m).classList.toggle('on',mods[m]);
+  const n=tokCount(k,p);$('#ctxN').textContent=n.toLocaleString();$('#ctxBar').style.width=(n/40960*100).toFixed(2)+'%';
+  $('#ctxEta').textContent=`${(n/40960*100).toFixed(1)}% after ${k+1} s`;
+  // tape
+  let toks=[];for(let j=Math.max(0,k-3);j<k;j++)toks=toks.concat(chunkTokens(j,1,true));toks=toks.concat(chunkTokens(k,p,false));
+  $('#tape').innerHTML=toks.slice(-34).map(([c,t])=>`<span class="chip ch-${c}">${t}</span>`).join('');
+  // timeline
+  let H='<div class="rl"></div>';
+  for(let j=0;j<16;j++)H+=`<div class="c hd${j===k?' cur':''}">${j}</div>`;
+  const rows=[['env-visual vᵏ','v'],['env-audio aᵏ','a'],['control token','c'],['text oᵏ','o'],['heard (speech)','h']];
+  for(const[lab,r]of rows){H+=`<div class="rl">${lab}</div>`;
+    for(let j=0;j<16;j++){const S=SCRIPT[j],done=j<k,cur=j===k,cc=cur?' cur':'';let cls='c',inner='';
+      if(r==='v'){if(done||(cur&&ph>=0)){cls+=' v'+(S.sc==='boil'?' hot':'');inner=S.sc==='boil'?'64 🔥':'64';}}
+      if(r==='a'){if(done||(cur&&ph>=1)){cls+=' a'+(S.u?' user':'');inner=S.u?`${S.u}`:wave(false,j);}}
+      if(r==='c'){if(done||(cur&&ph>=2)){cls+=S.c==='S'?' s':' l';inner=S.c==='S'?'speak':'listen';}}
+      if(r==='o'){const m=done?S.t.length:(cur?nText(j,p):0);if(m){cls+=' o';inner=S.t.slice(0,m).join(' ');}}
+      if(r==='h'){const pr=j>0?SCRIPT[j-1]:null;if(pr&&pr.t.length&&(done||cur)){cls+=' h';inner=pr.t.map((w,i)=>cur&&h&&i===h.i?`<span class="w-on">${w}</span>`:w).join(' ');}}
+      H+=`<div class="${cls}${cc}">${inner}</div>`;}}
+  $('#tl').innerHTML=H;
+}
+// scene canvas
+function fitCanvas(c){const dpr=window.devicePixelRatio||1,W=c.clientWidth,Hh=c.clientHeight;if(c.width!==Math.round(W*dpr)||c.height!==Math.round(Hh*dpr)){c.width=Math.round(W*dpr);c.height=Math.round(Hh*dpr);}const ctx=c.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);return[ctx,W,Hh];}
+function rrect(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+function wrap(ctx,text,maxW){const ws=text.split(' '),lines=[];let cur='';for(const w of ws){const t=cur?cur+' '+w:w;if(ctx.measureText(t).width>maxW&&cur){lines.push(cur);cur=w;}else cur=t;}if(cur)lines.push(cur);return lines;}
+function drawScene(now){
+  const[ctx,W,H]=fitCanvas($('#scene'));const s=SCRIPT[sim.k],ph=phaseOf(sim.p),T=now/1000;
+  ctx.fillStyle=C.soft;ctx.fillRect(0,0,W,H);
+  // counter
+  ctx.fillStyle=C.line;ctx.fillRect(0,H*.72,W,H*.28);
+  const cx=W*.5;
+  // stove
+  ctx.fillStyle=C.sys;rrect(ctx,cx-70,H*.66,140,H*.07,4);ctx.fill();
+  // flames
+  const big=s.sc==='boil';
+  for(let i=-2;i<=2;i++){const fx=cx+i*18,fh=(big?16:9)+Math.sin(T*12+i)*3;ctx.fillStyle=big?'#f97316':'#3b82f6';ctx.beginPath();ctx.moveTo(fx-5,H*.66);ctx.quadraticCurveTo(fx,H*.66-fh*1.4,fx+5,H*.66);ctx.fill();}
+  // pot
+  ctx.fillStyle=C.muted;ctx.beginPath();ctx.moveTo(cx-52,H*.38);ctx.lineTo(cx+52,H*.38);ctx.lineTo(cx+44,H*.64);ctx.lineTo(cx-44,H*.64);ctx.closePath();ctx.fill();
+  ctx.fillStyle=C.ink;ctx.fillRect(cx-60,H*.36,120,5);ctx.fillRect(cx-70,H*.42,14,4);ctx.fillRect(cx+56,H*.42,14,4);
+  if(big){ // bubbles + steam + spill
+    for(let i=0;i<8;i++){const ph2=(T*0.9+i*.37)%1;const bx=cx-40+((i*29)%80),by=H*.36-ph2*30;ctx.globalAlpha=1-ph2;ctx.strokeStyle=C.ink;ctx.lineWidth=1.3;ctx.beginPath();ctx.arc(bx,by,3+i%3,0,7);ctx.stroke();}
+    ctx.globalAlpha=.6;ctx.strokeStyle=C.muted;ctx.lineWidth=2;
+    for(let j=0;j<3;j++){ctx.beginPath();for(let y=0;y<40;y+=2){const x=cx-25+j*25+Math.sin(y*.25+T*4+j)*5;y===0?ctx.moveTo(x,H*.30-y):ctx.lineTo(x,H*.30-y);}ctx.stroke();}
+    ctx.globalAlpha=1;ctx.fillStyle='#93c5fd';ctx.beginPath();ctx.ellipse(cx+50,H*.64,8,3,0,0,7);ctx.fill();
+  }
+  if(s.sc==='calm2'){ctx.fillStyle='#dc2626';ctx.beginPath();ctx.ellipse(W*.86,H*.78,16,5,-.3,0,7);ctx.fill();ctx.fillStyle='#16a34a';ctx.fillRect(W*.86-20,H*.78-6,6,4);}
+  // bubbles
+  ctx.font='600 12px system-ui,sans-serif';
+  if(s.u&&ph>=1||s.u&&sim.p>0){const lines=wrap(ctx,'🗣 '+s.u,W*.38);const bw=W*.42,bh=14+lines.length*15;ctx.fillStyle=C['aud-bg'];ctx.strokeStyle=C.aud;ctx.lineWidth=1.5;rrect(ctx,8,8,bw,bh,8);ctx.fill();ctx.stroke();ctx.fillStyle=C.aud;lines.forEach((l,i)=>ctx.fillText(l,16,24+i*15));}
+  const h=heard(sim.k,sim.p);
+  if(h){const txt='🔊 '+h.w.join(' ');const lines=wrap(ctx,txt,W*.38);const bw=W*.44,bh=14+lines.length*15,bx=W-bw-8;ctx.fillStyle=C['sp-bg'];ctx.strokeStyle=C.sp;ctx.lineWidth=1.5;rrect(ctx,bx,8,bw,bh,8);ctx.fill();ctx.stroke();ctx.fillStyle=C.sp;lines.forEach((l,i)=>ctx.fillText(l,bx+8,24+i*15));
+    ctx.font='11px system-ui,sans-serif';ctx.fillStyle=C.muted;ctx.fillText('now saying: “'+h.w[h.i]+'”',bx+8,bh+22);}
+  if(ph===0){const a=1-sim.p/.2;ctx.strokeStyle=C.vis;ctx.globalAlpha=Math.max(0,a);ctx.lineWidth=4;ctx.strokeRect(2,2,W-4,H-4);ctx.globalAlpha=1;ctx.fillStyle=C.vis;ctx.font='700 11px system-ui,sans-serif';ctx.fillText('📷 frame captured → vᵏ',10,H-10);}
+  else{ctx.fillStyle=C.muted;ctx.font='11px ui-monospace,monospace';ctx.fillText(`t = ${(sim.k+sim.p).toFixed(1)} s`,10,H-10);}
+}
+$('#simPlay').onclick=()=>{sim.run=!sim.run;$('#simPlay').textContent=sim.run?'⏸ Pause':'▶ Play';};
+$('#simStep').onclick=()=>{sim.run=false;$('#simPlay').textContent='▶ Play';const ph=phaseOf(sim.p);if(ph>=4){sim.k=(sim.k+1)%16;sim.p=0.001;}else sim.p=PH[ph+1]+0.001;sim.key='';};
+$('#simReset').onclick=()=>{sim.k=0;sim.p=0;sim.key='';};
+$$('[data-speed]').forEach(b=>b.onclick=()=>{sim.speed=+b.dataset.speed;$$('[data-speed]').forEach(x=>x.classList.toggle('on',x===b));});
+
+/* ================= 3. TAIL ================= */
+const NARR="the street is quiet a cyclist rolls past the bakery on the left two people chat outside the cafe and the light ahead turns green for the waiting cars while a bus pulls away from the stop near the corner and pigeons scatter across the square as a tram bell rings".split(' ');
+const EVENT="oh — a dog just darted into the road!".split(' ');
+const AFTER="the driver brakes hard and the dog trots back to the pavement".split(' ');
+const EV_T=6,T_END=14;
+const dur=w=>0.2+0.05*w.replace(/[^a-z]/gi,'').length;
+function simulate(mode,look){
+  const narr=[...NARR],ev=[...EVENT.map(w=>({w,ev:1})),...AFTER.map(w=>({w,ev:2}))],out=[];let cum=0;
+  for(let k=0;k<T_END;k++){const g0=k+0.2;let n=0;const target=mode==='tail'?k+1:mode==='lead'?k+1+4:Infinity;
+    while(n<14){if(mode==='fixed'){if(n>=3)break;}else if(cum>=target-0.15)break;
+      let it;if(k>=EV_T&&ev.length)it=ev.shift();else{const w=narr.shift();if(!w)break;it={w,ev:0};}
+      const d=dur(it.w);out.push({...it,d,k,g:g0+n*0.04});cum+=d;n++;}
+    if(look&&mode==='tail'&&n>1)out[out.length-1].defer=true;}
+  let end=0.3;for(const o of out){let s=Math.max(o.g+0.12,end);if(o.defer)s=Math.max(s,o.k+1+0.2);o.p=s;end=s+o.d;}
+  return out;}
+const MODES=[{id:'lead',name:'(a) Text lead',how:'generate far ahead, then voice'},{id:'fixed',name:'(b) Fixed ratio',how:'3 text tokens every chunk'},{id:'tail',name:'(c) TAIL-trained',how:'≈ 1 s of speech per chunk'}];
+const X=t=>110+t*57;let tailRows=[],tailT=0,tailRun=true;
+function buildTail(){
+  const s=$('#tailsvg');s.innerHTML='';const look=$('#lookahead').checked;tailRows=[];
+  // axis
+  for(let t=0;t<=T_END;t++){el('line',{x1:X(t),x2:X(t),y1:18,y2:270,style:`stroke:${C.line};stroke-width:1`},s);const tx=el('text',{x:X(t),y:288,'text-anchor':'middle',style:`fill:${C.muted};font-size:11px`},s);tx.textContent=t+'s';}
+  for(let k=0;k<T_END;k++)if(k%2===0)el('rect',{x:X(k),y:18,width:57,height:252,style:`fill:${C.soft};opacity:.5`},s);
+  el('line',{x1:X(EV_T),x2:X(EV_T),y1:10,y2:272,style:`stroke:${C.sp};stroke-width:2;stroke-dasharray:5 4`},s);
+  const et=el('text',{x:X(EV_T)+5,y:14,style:`fill:${C.sp};font-size:11.5px;font-weight:700`},s);et.textContent='🐕 dog enters the scene';
+  MODES.forEach((m,ri)=>{const y0=34+ri*82;const words=simulate(m.id,look);tailRows.push({m,words});
+    const lb=el('text',{x:8,y:y0+26,style:`fill:${C.ink};font-size:13px;font-weight:700`},s);lb.textContent=m.name;
+    const lb2=el('text',{x:8,y:y0+42,style:`fill:${C.muted};font-size:10.5px`},s);lb2.textContent='gen ● → play ▭';
+    words.forEach(o=>{if(o.g>T_END)return;
+      el('circle',{cx:X(o.g),cy:y0,r:2.2,style:`fill:${C.muted}`},s);
+      el('line',{x1:X(o.g),y1:y0,x2:X(o.p),y2:y0+18,style:`stroke:${C.muted};stroke-width:.8;opacity:.55`},s);
+      const stale=o.ev===0&&o.g<EV_T&&o.p>=EV_T;
+      const fill=o.ev===1?C.sp:o.ev===2?C['sp-bg']:C['txt-bg'];const stroke=stale?C.sp:o.ev?C.sp:C.txt;
+      const r=el('rect',{x:X(o.p),y:y0+18,width:Math.max(2,o.d*57-1.5),height:26,rx:3,style:`fill:${fill};stroke:${stroke};stroke-width:${stale?2:1}${stale?';stroke-dasharray:3 2':''}`},s);
+      const tt=el('title',{},r);tt.textContent=`"${o.w}" — generated ${o.g.toFixed(2)} s, heard ${o.p.toFixed(2)} s (lag ${(o.p-o.g).toFixed(2)} s)${stale?' · STALE':''}${o.defer?' · speech deferred (look-ahead)':''}`;
+      if(o.defer)el('rect',{x:X(o.p),y:y0+44,width:Math.max(2,o.d*57-1.5),height:3,style:`fill:${C.ctl}`},s);
+      if(o.d*57>o.w.length*4.7+3){const t=el('text',{x:X(o.p)+2,y:y0+35,style:`fill:${o.ev===1?'#fff':C.ink};font-size:9px;pointer-events:none`},s);t.textContent=o.w;}
+    });
+    m.ph=el('text',{x:0,y:0},s);});
+  tailRows.ph=el('line',{x1:X(0),x2:X(0),y1:18,y2:272,style:`stroke:${C.ink};stroke-width:2`},s);
+  // stats
+  $('#tailBody').innerHTML=tailRows.map(r=>{const w=r.words;const ev=w.find(o=>o.ev===1);const lag=ev?ev.p-EV_T:NaN;const stale=w.filter(o=>o.ev===0&&o.g<EV_T&&o.p>=EV_T).length;
+    const cls=lag<1?'good':'bad';return`<tr><td><b>${r.m.name}</b></td><td>${r.m.how}</td><td class="${cls}">t = ${ev.p.toFixed(1)} s (+${lag.toFixed(1)} s)</td><td class="${stale?'bad':'good'}">${stale}</td><td class="mono" id="now-${r.m.id}">—</td></tr>`;}).join('');
+}
+function tailFrame(dt){if(!tailRows.ph)return;if(tailRun){tailT+=dt/1000;if(tailT>T_END)tailT=0;}
+  const x=X(tailT);tailRows.ph.setAttribute('x1',x);tailRows.ph.setAttribute('x2',x);
+  tailRows.forEach(r=>{const o=r.words.find(o=>tailT>=o.p&&tailT<o.p+o.d);const e=$('#now-'+r.m.id);if(e)e.textContent=o?o.w:'·';});}
+$('#tailPlay').onclick=()=>{tailRun=!tailRun;$('#tailPlay').textContent=tailRun?'⏸ Pause':'▶ Play';};
+$('#lookahead').onchange=buildTail;
+buildTail();
+
+/* ================= 2b. LISTEN / SPEAK ================= */
+const LSD={
+ LS:{
+  silent:[{t:'Step 1 · control position (same LM head)',d:[['[listen]',.93],['[speak]',.07]],pick:'[listen]',ex:'<b>Step 1 is always a 2-way choice</b> (same vocabulary head; in training the target here is only ever [listen] or [speak], so practically all mass lands on those two). Nothing in aᵏ calls for a reply → <b>[listen]</b>. The chunk ends right here: no text, no speech. The next chunk opens with ⟨b⟩.'}],
+  asked:[
+   {t:'Step 1 · control position (same LM head)',d:[['[speak]',.88],['[listen]',.12]],pick:'[speak]',ex:'<b>Step 1 — whether.</b> aᵏ ends with a finished question followed by a pause → <b>[speak]</b>. This is a clean binary decision, separate from content.'},
+   {t:'Step 2 · ordinary next-word prediction',d:[['Add',.41],['You',.18],['Next',.12],['Onions',.07],['…151k others',.22]],pick:'Add',ex:'<b>Step 2+ — what.</b> Now a normal LM step over the full vocabulary. Whether to talk is already settled, so this distribution only has to model content.'},
+   {t:'Step 3',d:[['the',.72],['some',.11],['your',.06],['…others',.11]],pick:'the',ex:'Content continues.'},
+   {t:'Step 4',d:[['onions',.66],['garlic',.14],['chopped',.09],['…others',.11]],pick:'onions',ex:'TAIL caps this chunk at ≈1 s of speech (3 tokens here), so the chunk closes. The next chunk reads new vᵏ⁺¹, aᵏ⁺¹ and starts again with a control token. If the user barges in, that is where <b>[listen]</b> stops the speech.',end:1}],
+  mid:[{t:'Step 1 · control position (same LM head)',d:[['[listen]',.81],['[speak]',.19]],pick:'[listen]',ex:'aᵏ contains speech that hasn\'t ended (no pause, mid-phrase) → <b>[listen]</b>. The model is doing end-of-turn detection itself; this is why no external VAD is needed.'}],
+ },
+ LT:{
+  silent:[{t:'Step 1 · ONE softmax: [listen] + every word',d:[['[listen]',.90],['The',.02],['Hi',.02],['…151k others',.06]],pick:'[listen]',spk:.10,ex:'Easy case: silence dominates, so LT behaves fine. <b>[listen]</b> wins.'}],
+  asked:[{t:'Step 1 · ONE softmax: [listen] + every word',d:[['[listen]',.34],['Add',.27],['You',.14],['Next',.09],['…151k others',.16]],pick:'[listen]',spk:.66,ex:'<b>The failure mode.</b> Taken together, the model puts 66% on speaking, but that mass is split across many possible first words. The single [listen] token is still the top choice, so greedy decoding stays <b>silent</b>. Whether to speak is entangled with what to say. (Sampling would answer only ~2 times in 3: unstable turn-taking.)',end:1}],
+  mid:[{t:'Step 1 · ONE softmax: [listen] + every word',d:[['[listen]',.62],['Sure',.08],['Add',.07],['…151k others',.23]],pick:'[listen]',spk:.38,ex:'Works here, but the margin is thinner than in LS (0.62 vs 0.81): the "speak" mass is still diluted across words.'}],
+ }};
+const AUD={silent:'a×10 · (quiet)',asked:'a×10 · "…what goes in next?" + pause',mid:'a×10 · "so I was thinking we"'};
+const ls={f:'LS',s:'asked',step:0};
+function lsRender(){
+  const seq=LSD[ls.f][ls.s];const st=Math.min(ls.step,seq.length);
+  let chips=`<span class="chip ch-b">⟨b⟩</span><span class="chip ch-v">v×64 · frame</span><span class="chip ch-a">${AUD[ls.s]}</span>`;
+  for(let i=0;i<st;i++){const p=seq[i].pick;const c=p.startsWith('[')?'ch-c':'ch-t';chips+=`<span class="chip ${c}${i===st-1?' ch-new':''}">${p}</span>`;}
+  if(st>=seq.length)chips+=`<span class="chip ch-b">⟨b⟩</span><span class="note" style="margin-left:6px">→ chunk k+1</span>`;
+  else chips+=`<span class="chip" style="border:1px dashed var(--muted);color:var(--muted)">?</span>`;
+  $('#lsTape').innerHTML=chips;
+  const cur=st<seq.length?seq[st]:seq[seq.length-1];
+  const showPick=st>=seq.length||false;
+  $('#lsDistTitle').innerHTML=`<b>${st<seq.length?'Next-token distribution':'Last step'}</b> — ${cur.t}`;
+  $('#lsDist').innerHTML=cur.d.map(([w,p])=>{const isPick=w===cur.pick&&(st>=seq.length||st>0||ls.step>0);const spk=ls.f==='LT'&&w!=='[listen]';return`<div class="dl ${w===cur.pick&&st>=seq.length?'pickl':''}">${w}</div><div><div class="db ${w===cur.pick?'pick':''} ${spk?'spk':''}" style="width:${(p*100).toFixed(0)}%"></div></div><div class="dv">${Math.round(p*100)}%</div>`;}).join('');
+  $('#lsSum').innerHTML=ls.f==='LT'&&cur.spk!=null?`<div class="lt-sum">All word tokens together (= "speak") = <b>${Math.round(cur.spk*100)}%</b>, yet argmax = <b>${cur.pick}</b></div>`:'';
+  $('#lsExplain').innerHTML=st===0?'The model has just read this chunk\'s frame and audio. Press <b>Next decoding step</b>: highlighted bar = the token that gets emitted.':seq[st-1].ex;
+  $('#lsStep').disabled=st>=seq.length;$('#lsStep').style.opacity=st>=seq.length?.45:1;
+}
+$$('[data-ls]').forEach(b=>b.onclick=()=>{ls.f=b.dataset.ls;ls.step=0;$$('[data-ls]').forEach(x=>x.classList.toggle('on',x===b));lsRender();});
+$$('[data-sit]').forEach(b=>b.onclick=()=>{ls.s=b.dataset.sit;ls.step=0;$$('[data-sit]').forEach(x=>x.classList.toggle('on',x===b));lsRender();});
+$('#lsStep').onclick=()=>{ls.step++;lsRender();};
+$('#lsReset').onclick=()=>{ls.step=0;lsRender();};
+lsRender();
+
+function buildLabels(){
+  const s=$('#lblsvg');s.innerHTML='';const X=t=>120+t*100;const T=8;
+  const txt=(x,y,t,st)=>{const e=el('text',{x,y,style:st},s);e.textContent=t;return e;};
+  for(let k=0;k<T;k++){el('rect',{x:X(k),y:8,width:100,height:200,style:`fill:${k%2?C.soft:'transparent'};opacity:.7`},s);txt(X(k)+50,22,`chunk ${k}`,`fill:${C.muted};font-size:11px;text-anchor:middle`);}
+  for(let k=0;k<=T;k++)el('line',{x1:X(k),x2:X(k),y1:8,y2:208,style:`stroke:${C.line}`},s);
+  txt(8,58,'user audio',`fill:${C.aud};font-size:12px;font-weight:700`);
+  el('rect',{x:X(1.3),y:42,width:(3.5-1.3)*100,height:24,rx:5,style:`fill:${C['aud-bg']};stroke:${C.aud}`},s);
+  txt(X(1.3)+8,58,'"Hey, what goes in next?"',`fill:${C.aud};font-size:11.5px`);
+  txt(8,104,'assistant ref.',`fill:${C.sp};font-size:12px;font-weight:700`);txt(8,118,'speech + timestamps',`fill:${C.muted};font-size:10.5px`);
+  const W=[['Add',4.1,.3],['the',4.4,.15],['onions',4.55,.5],['and',5.05,.15],['stir',5.2,.35],['for',5.6,.2],['two',5.8,.3],['minutes',6.1,.55]];
+  W.forEach(([w,t0,d])=>{el('rect',{x:X(t0),y:90,width:d*100-2,height:24,rx:3,style:`fill:${C['sp-bg']};stroke:${C.sp}`},s);txt(X(t0)+3,106,w,`fill:${C.ink};font-size:10.5px`);
+    el('line',{x1:X(t0),x2:X(t0),y1:114,y2:148,style:`stroke:${C.sp};stroke-dasharray:2 2`},s);el('circle',{cx:X(t0),cy:114,r:2.5,style:`fill:${C.sp}`},s);});
+  txt(8,176,'target oᵏ',`fill:${C.ctl};font-size:12px;font-weight:700`);txt(8,190,'(start-time rule)',`fill:${C.muted};font-size:10.5px`);
+  for(let k=0;k<T;k++){const ws=W.filter(w=>w[1]>=k&&w[1]<k+1).map(w=>w[0]);const sp=ws.length>0;
+    el('rect',{x:X(k)+4,y:150,width:92,height:52,rx:6,style:`fill:${sp?C['ctl-bg']:C.panel};stroke:${sp?C.ctl:C.line}`},s);
+    txt(X(k)+50,168,sp?'[speak]':'[listen]',`fill:${sp?C.ctl:C.muted};font-size:11.5px;font-weight:700;text-anchor:middle;font-family:ui-monospace,monospace`);
+    if(sp){const line=ws.join(' ');const parts=line.length>13?[ws.slice(0,2).join(' '),ws.slice(2).join(' ')]:[line];parts.forEach((p,i)=>txt(X(k)+50,183+i*12,p,`fill:${C.txt};font-size:10.5px;text-anchor:middle`));}}
+}
+buildLabels();
+
+/* ================= 3a. TAIL LEDGER ================= */
+const SENT=[['Add',.3],['the',.15],['chopped',.4],['onions',.5],['and',.15],['stir',.35],['them',.2],['carefully',.6],['for',.2],['about',.35],['two',.3],['minutes,',.55],['then',.25],['lower',.35],['the',.15],['heat',.4],['slightly.',.55]];
+const led={mode:'tail',look:false,sel:1};const GEN=0.15,LK=8;
+function ledger(){
+  const ch=[];let i=0,cum=0;
+  for(let k=0;k<LK;k++){const toks=[];
+    if(led.mode==='tail'){while(i<SENT.length&&cum<k+1-1e-9){toks.push({w:SENT[i][0],d:SENT[i][1],k,start:cum});cum+=SENT[i][1];i++;}}
+    else{const N=led.mode==='fixed2'?2:4;for(let j=0;j<N&&i<SENT.length;j++){toks.push({w:SENT[i][0],d:SENT[i][1],k});cum+=SENT[i][1];i++;}}
+    ch.push(toks);}
+  let end=GEN;const all=[];
+  ch.forEach((toks,k)=>{toks.forEach((t,j)=>{t.def=led.look&&j===toks.length-1&&toks.length>1;const ready=t.def?k+1+GEN:k+GEN;t.p=Math.max(end,ready);t.gap=t.p>end+0.01?[end,t.p]:null;end=t.p+t.d;all.push(t);});
+    ch[k].endAfter=end;});
+  return{ch,all};
+}
+function buildLedger(){
+  const s=$('#ledger');s.innerHTML='';const X=t=>110+t*102;const{ch,all}=ledger();
+  const txt=(x,y,t,st)=>{const e=el('text',{x,y,style:st},s);e.textContent=t;return e;};
+  const defs=el('defs',{},s);const pat=el('pattern',{id:'hatch',width:6,height:6,patternUnits:'userSpaceOnUse',patternTransform:'rotate(45)'},defs);el('line',{x1:0,y1:0,x2:0,y2:6,style:`stroke:${C.warn};stroke-width:2`},pat);
+  const shade=k=>k%2?C.txt:C.sp;
+  for(let k=0;k<LK;k++){
+    const g=el('g',{style:'cursor:pointer'},s);g.addEventListener('click',()=>{led.sel=k;buildLedger();});
+    el('rect',{x:X(k),y:6,width:102,height:258,style:`fill:${k===led.sel?C['ctl-bg']:(k%2?C.soft:C.panel)};opacity:${k===led.sel?.8:.7}`},g);
+    const t=el('text',{x:X(k)+51,y:20,style:`fill:${k===led.sel?C.ctl:C.muted};font-size:11px;font-weight:600;text-anchor:middle`},g);t.textContent=`chunk ${k}  [${k},${k+1}) s`;
+    ch[k].forEach((tk,j)=>{const e=el('text',{x:X(k)+8,y:40+j*14,style:`fill:${shade(k)};font-size:11.5px;font-weight:600;font-family:ui-monospace,monospace`},g);e.textContent=tk.w+(tk.def?' ⇢':'');});
+    if(!ch[k].length){const e=el('text',{x:X(k)+8,y:40,style:`fill:${C.muted};font-size:11px`},g);e.textContent='(nothing left)';}
+    const audio=ch[k].reduce((a,t)=>a+t.d,0);
+    const e2=el('text',{x:X(k)+8,y:118,style:`fill:${C.muted};font-size:10.5px`},g);e2.textContent=ch[k].length?`${ch[k].length} tok · ${audio.toFixed(2)} s audio`:'';
+  }
+  txt(6,40,'LLM emits',`fill:${C.ink};font-size:12px;font-weight:700`);txt(6,54,'(text, this chunk)',`fill:${C.muted};font-size:10.5px`);
+  txt(6,160,'heard',`fill:${C.ink};font-size:12px;font-weight:700`);txt(6,174,'(real time)',`fill:${C.muted};font-size:10.5px`);
+  txt(6,230,'left to say',`fill:${C.ink};font-size:12px;font-weight:700`);txt(6,244,'when chunk ends',`fill:${C.muted};font-size:10.5px`);
+  for(let k=0;k<=LK;k++)el('line',{x1:X(k),x2:X(k),y1:6,y2:264,style:`stroke:${C.line}`},s);
+  let lowAlt=false;
+  all.forEach(t=>{if(t.gap)el('rect',{x:X(t.gap[0]),y:142,width:(t.gap[1]-t.gap[0])*102,height:30,style:'fill:url(#hatch)'},s);
+    el('rect',{x:X(t.p),y:142,width:Math.max(2,t.d*102-1.5),height:30,rx:3,style:`fill:${shade(t.k)};opacity:${t.def?.55:.85}`},s);
+    const blk=el('rect',{x:X(t.p),y:142,width:Math.max(2,t.d*102-1.5),height:30,style:'fill:transparent'},s);const ti=el('title',{},blk);ti.textContent=`"${t.w}" · written in chunk ${t.k} · heard ${t.p.toFixed(2)}–${(t.p+t.d).toFixed(2)} s`;
+    if(t.d*102-4>t.w.length*6.4)txt(X(t.p)+3,161,t.w,'fill:#fff;font-size:10px;font-weight:600;pointer-events:none');
+    else{lowAlt=!lowAlt;el('line',{x1:X(t.p)+3,x2:X(t.p)+3,y1:172,y2:lowAlt?180:192,style:`stroke:${C.muted};stroke-width:.8`},s);txt(X(t.p)+1,lowAlt?188:200,t.w,`fill:${C.ink};font-size:9.5px;pointer-events:none`);}});
+  let maxQ=0,gaps=0;
+  ch.forEach((toks,k)=>{if(!toks.length&&k>0&&!ch.slice(k).some(c=>c.length))return;const q=ch[k].endAfter-(k+1);maxQ=Math.max(maxQ,q);
+    const last=!ch.slice(k+1).some(c=>c.length);const col=q>1.0?C.sp:q<-0.02?(last?C.muted:C.warn):C.train;const lab=q>=-0.02?`+${Math.max(0,q).toFixed(2)} s`:(last?'done':'runs dry');
+    el('rect',{x:X(k)+10,y:212,width:82,height:26,rx:6,style:`fill:${C.panel};stroke:${col};stroke-width:1.5`},s);txt(X(k)+51,229,lab,`fill:${col};font-size:11.5px;font-weight:700;text-anchor:middle`);});
+  gaps=all.filter(t=>t.gap&&t.gap[1]-t.gap[0]>0.02).reduce((a,t)=>a+(t.gap[1]-t.gap[0]),0);
+  const cap={fixed2:`<b>Fixed 2 tokens/chunk:</b> 2 short words ≈ 0.45 s of audio for a 1 s chunk → playback <b>runs dry</b> and the voice stutters (hatched = ${gaps.toFixed(1)} s of silence in total). Switch to 4 and the opposite happens.`,
+    fixed4:`<b>Fixed 4 tokens/chunk:</b> about 1.3 s of audio per 1 s chunk, so the queue grows every chunk (up to <b>+${maxQ.toFixed(2)} s</b>). What the user hears was decided further and further in the past; a barge-in or scene change is answered late.`,
+    tail:`<b>TAIL:</b> each chunk carries only the tokens whose <i>speech start time</i> falls inside it (start-time rule). Chunk 2 gets 3 words, chunk 3 only 2 ("two minutes,"), because "minutes," takes long to say. The queue stays bounded (max <b>+${maxQ.toFixed(2)} s</b>, under one word) and doesn't grow.${led.look?' With look-ahead the deferred word (⇢) waits for the next chunk, which costs a little silence.':''}`}[led.mode];
+  $('#ledCap').innerHTML=cap;
+  // interleave strip for selected chunk
+  $('#ilvK').textContent=led.sel;const k=led.sel;let H='';
+  const prev=k>0?ch[k-1].filter(t=>t.def):[];
+  prev.forEach(t=>{H+=`<span class="lab">speech for "${t.w}" (deferred from chunk ${k-1}):</span>`+'<span class="sq prev"></span>'.repeat(Math.round(t.d*25));});
+  ch[k].forEach(t=>{H+=`<span class="chip ch-t${t.def?' def':''}">${t.w}</span>`;H+=t.def?`<span class="lab">→ its speech waits for chunk ${k+1}</span>`:'<span class="sq"></span>'.repeat(Math.round(t.d*25));});
+  if(!H)H='<span class="lab">empty chunk</span>';
+  const nsq=prev.reduce((a,t)=>a+Math.round(t.d*25),0)+ch[k].filter(t=>!t.def).reduce((a,t)=>a+Math.round(t.d*25),0);
+  H+=`<span class="lab" style="margin-left:auto">= ${ch[k].length} text + ${nsq} speech tokens (${(nsq/25).toFixed(2)} s)</span>`;
+  $('#ilv').innerHTML=H;
+}
+$$('[data-led]').forEach(b=>b.onclick=()=>{led.mode=b.dataset.led;$$('[data-led]').forEach(x=>x.classList.toggle('on',x===b));buildLedger();});
+$('#ledLook').onchange=e=>{led.look=e.target.checked;buildLedger();};
+buildLedger();
+
+/* ================= 4. TRAINING ================= */
+$('#stages').innerHTML=STAGES.map((S,i)=>`<div class="stage"><h4>${S.name}</h4><div><span class="tag t-txt">trainable</span> ${S.train.length===ALLTR.length?'all learnable modules':S.train.filter(x=>x!=='sum').map(x=>NODES[x].t).join(', ')}</div>${S.frozen.length?`<div style="margin-top:4px"><span class="tag t-sys">frozen</span> ${S.frozen.map(x=>NODES[x].t).join(', ')}</div>`:''}<ul><li>${S.obj}</li><li>${S.data}</li></ul><button class="btn" data-goto="${i}">show on diagram ↑</button></div>`).join('');
+$$('[data-goto]').forEach(b=>b.onclick=()=>{setStage(+b.dataset.goto);$('#arch-sec').scrollIntoView({behavior:'smooth'});});
+function drawLR(){
+  const[ctx,W,H]=fitCanvas($('#lr'));const tau=+$('#tau').value,spread=+$('#spread').value,sc=Math.min(1,spread/tau),lmin=400,lmax=lmin+spread;
+  $('#tauV').textContent=tau;$('#spreadV').textContent=spread;$('#lrScale').textContent=sc.toFixed(2);
+  ctx.clearRect(0,0,W,H);const L=48,R=14,T=16,B=34,pw=W-L-R,phh=H-T-B;const xs=u=>L+u*pw,ys=v=>T+(0.5-v)/1*phh;
+  ctx.strokeStyle=C.line;ctx.lineWidth=1;ctx.font='11px system-ui,sans-serif';ctx.fillStyle=C.muted;
+  [-.5,-.25,0,.25,.5].forEach(v=>{ctx.beginPath();ctx.moveTo(L,ys(v));ctx.lineTo(W-R,ys(v));ctx.stroke();ctx.fillText(v.toFixed(2),8,ys(v)+4);});
+  ctx.strokeStyle=C.muted;ctx.beginPath();ctx.moveTo(L,ys(0));ctx.lineTo(W-R,ys(0));ctx.stroke();
+  ctx.fillText(`ℓ_min = ${lmin}`,L,H-12);const t2=`ℓ_max = ${lmax}`;ctx.fillText(t2,W-R-ctx.measureText(t2).width,H-12);ctx.fillText('response length within the GRPO group →',L+pw/2-110,H-12);
+  const line=(f,col,dash)=>{ctx.strokeStyle=col;ctx.lineWidth=3;ctx.setLineDash(dash||[]);ctx.beginPath();for(let i=0;i<=100;i++){const u=i/100,v=f(u);i?ctx.lineTo(xs(u),ys(v)):ctx.moveTo(xs(u),ys(v));}ctx.stroke();ctx.setLineDash([]);};
+  line(u=>(0.5-u)*sc,C.train);line(u=>Math.min(0,(0.5-u)*sc),C.sp,[6,4]);
+  ctx.font='600 12px system-ui,sans-serif';ctx.fillStyle=C.train;ctx.fillText('correct: s_i',xs(.03),ys(.5*sc)+16);ctx.fillStyle=C.sp;ctx.fillText('wrong: min(0, s_i)',xs(.03),ys(0)-8);
+}
+['tau','spread'].forEach(id=>$('#'+id).oninput=drawLR);drawLR();
+
+/* ================= 5. ABLATIONS ================= */
+const AB=[{cs:'1.0 s',b:'Explicit',c:'LS',v:[0.98,3.56,0.29,0.36,0.65]},{cs:'1.0 s',b:'Explicit',c:'LT',v:[0.92,3.60,0.24,0.35,0.56]},{cs:'1.0 s',b:'Implicit',c:'LT',v:[0.96,3.31,0.22,0.28,0.45]},{cs:'0.2 s',b:'Explicit',c:'LS',v:[0.81,1.22,0.10,0.09,0.45]},{cs:'0.1 s',b:'Explicit',c:'LS',v:[0.67,2.40,0.10,0.13,0.32]}];
+const MET=['AdvBench','AlpacaEval','IFEval','SDQA','MMLU'];const MAX=MET.map((_,i)=>Math.max(...AB.map(r=>r.v[i])));
+const CMP={all:{rows:[0,1,2,3,4],cap:'Best overall: <b>1.0 s · explicit boundary · LS</b>. Pick a comparison to isolate one knob.'},
+ chunk:{rows:[0,3,4],cap:'<b>Chunk size</b> (explicit, LS fixed): 1.0 s ≫ 0.2 s / 0.1 s on every metric. Shorter chunks = faster refresh but too little information per decision. Note the non-monotonic AlpacaEval (1.22 → 2.40): noisy.'},
+ bound:{rows:[1,2],cap:'<b>Boundary</b> (1.0 s, LT fixed): explicit boundary tokens win on 4/5 metrics (MMLU 0.56 vs 0.45). Separating "new inputs" from "my outputs" isn\'t free for the model to infer.'},
+ ctrl:{rows:[0,1],cap:'<b>Control</b> (1.0 s, explicit fixed): LS beats LT on IFEval, SDQA, MMLU, AdvBench. Decide <i>whether</i> to speak before deciding <i>what</i> to say.'}};
+function drawAbl(mode){const R=CMP[mode];$$('[data-cmp]').forEach(b=>b.classList.toggle('on',b.dataset.cmp===mode));
+  $('#ablT').innerHTML=`<tr><th>Chunk</th><th>Boundary</th><th>Control</th>${MET.map(m=>`<th>${m}</th>`).join('')}</tr>`+AB.map((r,i)=>`<tr class="${R.rows.includes(i)?'':'dim'}"><td class="mono">${r.cs}</td><td>${r.b}</td><td class="mono">${r.c}</td>${r.v.map((v,j)=>`<td class="barcell"><div class="bar" style="width:${(v/MAX[j]*100).toFixed(0)}%;background:${v===MAX[j]?'var(--train)':'var(--txt)'}"><span>${v}</span></div></td>`).join('')}</tr>`).join('');
+  $('#ablCap').innerHTML=R.cap;}
+$$('[data-cmp]').forEach(b=>b.onclick=()=>drawAbl(b.dataset.cmp));drawAbl('all');
+$('#gran').innerHTML=[1,.2,.1].map(t=>{const a=10*t,x=3.5*t,sp=25*t;const bar=(v,m,col)=>`<div class="gb" style="width:${Math.max(3,v/m*100)}%;background:${col}"></div>`;
+  return`<div class="gcard"><b class="mono">t = ${t} s</b><div class="row"><b>audio tok</b>${bar(a,10,'var(--aud)')}<span class="mono">${a}</span></div><div class="row"><b>text tok</b>${bar(x,3.5,'var(--txt)')}<span class="mono">≈${x.toFixed(2)}</span></div><div class="row"><b>speech tok</b>${bar(sp,25,'var(--sp)')}<span class="mono">${sp}</span></div><div class="note">${t===1?'≈3–4 words per decision: room for a control token + a phrase.':t===.2?'<1 text token per chunk: most chunks can only carry a control token; one word spans several chunks.':'1 audio token, ~0.35 text tokens: the model decides listen/speak 10×/s on almost no new evidence, and boundary/control tokens dominate the sequence.'}</div></div>`;}).join('');
+
+/* ================= main loop ================= */
+let lastT=performance.now();
+function loop(now){const dt=Math.min(100,now-lastT);lastT=now;
+  if(sim.run){sim.p+=dt*sim.speed/1000;while(sim.p>=1){sim.p-=1;sim.k=(sim.k+1)%16;}}
+  simRender();drawScene(now);tailFrame(dt);requestAnimationFrame(loop);}
+requestAnimationFrame(loop);
+window.addEventListener('resize',()=>drawLR());
+</script>
+</body>
+</html>
+
+{% endraw %}
