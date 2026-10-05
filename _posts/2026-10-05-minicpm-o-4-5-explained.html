@@ -210,7 +210,7 @@ nav.toc a{text-decoration:none;color:var(--ink);background:var(--panel);border:1
 <div class="sitebar"><a class="home" href="/">Mohammadreza Salehi</a><a href="/blog/">&larr; All posts</a><span class="note" style="margin-left:auto">October 5, 2026</span></div>
 <header>
   <div>
-    <div class="note mono">arXiv 2604.27393 · OpenBMB · MiniCPM-o Team</div>
+    <div class="note mono">Explainer of <a href="https://arxiv.org/abs/2604.27393">arXiv:2604.27393</a> · OpenBMB · MiniCPM-o Team · <a href="#ref-sec">cite ↓</a></div>
     <h1>MiniCPM-o 4.5 — real-time full-duplex omni-modal interaction</h1>
     <p class="sub">9B end-to-end model that sees, listens and speaks <i>at the same time</i>. Core idea: <b>Omni-Flow</b> — chop time into 1 s chunks and serialize every chunk as <span class="mono">[vision ; audio ; output]</span> into one causal sequence, so a plain LLM decides each second <i>whether</i> and <i>what</i> to say. <b>TAIL</b> keeps the spoken audio from lagging behind what the model currently sees.</p>
   </div>
@@ -218,7 +218,7 @@ nav.toc a{text-decoration:none;color:var(--ink);background:var(--panel);border:1
 </header>
 <nav class="toc">
   <a href="#arch-sec">1 · Architecture</a><a href="#flow-sec">2 · Omni-Flow live</a><a href="#ls-sec">2b · Listen vs speak</a><a href="#tail-sec">3 · TAIL speech timing</a>
-  <a href="#train-sec">4 · Training &amp; RL</a><a href="#abl-sec">5 · Ablations &amp; numbers</a><a href="#crit-sec">6 · Critical read</a>
+  <a href="#train-sec">4 · Training &amp; RL</a><a href="#abl-sec">5 · Ablations &amp; numbers</a><a href="#crit-sec">6 · Critical read</a><a href="#ref-sec">Reference</a>
 </nav>
 
 <!-- 1 ARCHITECTURE -->
@@ -462,6 +462,26 @@ nav.toc a{text-decoration:none;color:var(--ink);background:var(--panel);border:1
     <li><b>From a video-representation angle:</b> the streaming visual path is per-frame image encoding (SigLIP + resampler) — no temporal modeling in the encoder; all temporal reasoning lives in the LLM over a growing KV cache. Obvious room for a streaming video encoder / temporal token compression, and for context management beyond ~9 minutes.</li>
     <li><b>Proactivity is supervised, not emergent.</b> It comes from hand-built full-duplex scenarios (reminders, scene description) in SFT; the paper itself calls proactive behaviour "relatively simple".</li>
   </ul>
+</section>
+
+<!-- REFERENCE -->
+<section class="card" id="ref-sec">
+  <h2>Reference</h2>
+  <p class="lede">Everything on this page explains, and where marked, critiques the following paper. Numbers, tables and section references (§, Table N) are from it; scenarios, simulations and notes marked "mine" are my own illustrations.</p>
+  <p style="font-size:14.5px;margin:0 0 10px">Junbo Cui, Bokai Xu, Chongyi Wang, Tianyu Yu, Weiyue Sun, Yingjing Xu, Tianran Wang, Zhihui He, Wenshuo Ma, Tianchi Cai, Jiancheng Gui, Luoyuan Zhang, Xian Sun, Fuwei Huang, Moye Chen, Zhuo Lin, Hanyu Liu, Qingxin Gui, Qingzhe Han, Yuyang Wen, Huiping Liu, Rongkang Wang, Yaqi Zhang, Hongliang Wei, Chi Chen, You Li, Kechen Fang, Jie Zhou, Yuxuan Li, Guoyang Zeng, Chaojun Xiao, Yankai Lin, Xu Han, Maosong Sun, Zhiyuan Liu, Yuan Yao. <b>MiniCPM-o 4.5: Towards Real-Time Full-Duplex Omni-Modal Interaction.</b> <i>arXiv preprint arXiv:2604.27393</i>, 2026.</p>
+  <div class="toolbar">
+    <a class="btn" href="https://arxiv.org/abs/2604.27393" style="text-decoration:none">arXiv abstract</a>
+    <a class="btn" href="https://arxiv.org/pdf/2604.27393" style="text-decoration:none">PDF</a>
+    <a class="btn" href="https://github.com/OpenBMB/MiniCPM-o" style="text-decoration:none">Code (OpenBMB/MiniCPM-o)</a>
+    <button class="btn" id="bibCopy">Copy BibTeX</button>
+  </div>
+  <pre class="formula" id="bibtex" style="white-space:pre;margin:0">@article{cui2026minicpmo45,
+  title   = {MiniCPM-o 4.5: Towards Real-Time Full-Duplex Omni-Modal Interaction},
+  author  = {Cui, Junbo and Xu, Bokai and Wang, Chongyi and Yu, Tianyu and Sun, Weiyue and Xu, Yingjing and Wang, Tianran and He, Zhihui and Ma, Wenshuo and Cai, Tianchi and Gui, Jiancheng and Zhang, Luoyuan and Sun, Xian and Huang, Fuwei and Chen, Moye and Lin, Zhuo and Liu, Hanyu and Gui, Qingxin and Han, Qingzhe and Wen, Yuyang and Liu, Huiping and Wang, Rongkang and Zhang, Yaqi and Wei, Hongliang and Chen, Chi and Li, You and Fang, Kechen and Zhou, Jie and Li, Yuxuan and Zeng, Guoyang and Xiao, Chaojun and Lin, Yankai and Han, Xu and Sun, Maosong and Liu, Zhiyuan and Yao, Yuan},
+  journal = {arXiv preprint arXiv:2604.27393},
+  year    = {2026},
+  url     = {https://arxiv.org/abs/2604.27393}
+}</pre>
 </section>
 </div>
 
@@ -916,6 +936,7 @@ $$('[data-cmp]').forEach(b=>b.onclick=()=>drawAbl(b.dataset.cmp));drawAbl('all')
 $('#gran').innerHTML=[1,.2,.1].map(t=>{const a=10*t,x=3.5*t,sp=25*t;const bar=(v,m,col)=>`<div class="gb" style="width:${Math.max(3,v/m*100)}%;background:${col}"></div>`;
   return`<div class="gcard"><b class="mono">t = ${t} s</b><div class="row"><b>audio tok</b>${bar(a,10,'var(--aud)')}<span class="mono">${a}</span></div><div class="row"><b>text tok</b>${bar(x,3.5,'var(--txt)')}<span class="mono">≈${x.toFixed(2)}</span></div><div class="row"><b>speech tok</b>${bar(sp,25,'var(--sp)')}<span class="mono">${sp}</span></div><div class="note">${t===1?'≈3–4 words per decision: room for a control token + a phrase.':t===.2?'<1 text token per chunk: most chunks can only carry a control token; one word spans several chunks.':'1 audio token, ~0.35 text tokens: the model decides listen/speak 10×/s on almost no new evidence, and boundary/control tokens dominate the sequence.'}</div></div>`;}).join('');
 
+$('#bibCopy').onclick=()=>{const t=$('#bibtex').textContent,b=$('#bibCopy'),ok=()=>{b.textContent='Copied ✓';setTimeout(()=>b.textContent='Copy BibTeX',1500);};if(navigator.clipboard)navigator.clipboard.writeText(t).then(ok,()=>{});};
 /* ================= main loop ================= */
 let lastT=performance.now();
 function loop(now){const dt=Math.min(100,now-lastT);lastT=now;
